@@ -1,2 +1,2 @@
 # portfolio
-portföy takip uygulaması
+portfolio tracker
