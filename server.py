@@ -132,6 +132,10 @@ def durum_hesapla(kaydet=True):
             "gun_ici": v.get("gun_ici", {}).get(date.today().isoformat(), []),
             "uzatilmis": uzatilmis,
             "olaylar": list(reversed(v.get("olaylar", [])))[:1000],
+            "vadeli": {**d["vadeli"],
+                       "islemler": sorted(vr.vadeli_islemleri(v), key=lambda i: i.get("kapanis_tarih") or i.get("acilis_tarih") or "", reverse=True),
+                       "hareketler": sorted(vr.vadeli_hareketleri(v), key=lambda h: h["tarih"], reverse=True),
+                       "ayar": (v.get("vadeli") or {}).get("ayar", {})},
         }
     # display currency rates (fetched outside the data lock: network only, nothing is written)
     sonuc.update(kur_bilgisi(sonuc["seri"], v["ayarlar"]["baslangic_tarihi"]))
@@ -269,6 +273,7 @@ def varlik_ekle():
             v["izleme"] = [w for w in v["izleme"] if w["id"] != b["izleme_id"]]
         c = 100 if sinif == "opsiyon" else 1
         vr.olay(v, "alim", f"{var['ad']} added: {miktar:g} × ${f:g}", sinif, var["id"], miktar * f * c)
+        vr.gecmisi_yenile(v, v["islemler"][-1]["tarih"])
         vr.yaz(v)
     return jsonify({"ok": True, "id": var["id"]})
 
@@ -321,6 +326,7 @@ def varlik_sil(vid):
     with vr._KILIT:
         v = vr.oku()
         silinen = next((x for x in v["varliklar"] if x["id"] == vid), None)
+        vr.gecmisi_yenile(v, min((x["tarih"] for x in v["islemler"] if x["varlik_id"] == vid), default=None))
         v["varliklar"] = [x for x in v["varliklar"] if x["id"] != vid]
         v["islemler"] = [x for x in v["islemler"] if x["varlik_id"] != vid]
         if silinen:
@@ -367,6 +373,7 @@ def islem_ekle():
             for h in var.get(anahtar, []):
                 if hid and h["id"] == hid:
                     h["tamam"] = True
+        vr.gecmisi_yenile(v, yeni["tarih"])
         vr.yaz(v)
     return jsonify({"ok": True})
 
@@ -384,6 +391,7 @@ def islem_sil(iid):
                 return hata("This buy can't be deleted because a later sale depends on it. Delete that sale first. (" + sorun + ")")
         v["islemler"] = kalan
         if i:
+            vr.gecmisi_yenile(v, i["tarih"])
             var = next((x for x in v["varliklar"] if x["id"] == i["varlik_id"]), {})
             vr.olay(v, "silme", f"{var.get('ad', '?')} trade deleted ({'buy' if i['tip'] == 'al' else 'sell'} {i['tarih']})",
                     var.get("sinif"), i["varlik_id"])
@@ -409,6 +417,7 @@ def nakit_hareketi():
                                        "tutar": tutar, "not": b.get("not") or ""})
         vr.olay(v, "nakit", f"{'Deposit' if tip == 'yatir' else 'Withdrawal'}: ${tutar:,.2f}", "nakit", None,
                 tutar if tip == "yatir" else -tutar)
+        vr.gecmisi_yenile(v, v["nakit_hareketleri"][-1]["tarih"])
         vr.yaz(v)
     return jsonify({"ok": True})
 
@@ -417,6 +426,8 @@ def nakit_hareketi():
 def nakit_sil(nid):
     with vr._KILIT:
         v = vr.oku()
+        h = next((x for x in v["nakit_hareketleri"] if x["id"] == nid), None)
+        vr.gecmisi_yenile(v, h and h["tarih"])
         v["nakit_hareketleri"] = [x for x in v["nakit_hareketleri"] if x["id"] != nid]
         vr.olay(v, "silme", "Deposit/withdrawal entry deleted", "nakit")
         vr.yaz(v)
@@ -485,6 +496,246 @@ def izleme_sil(wid):
             vr.olay(v, "izleme", f"Removed from watchlist: {w['sembol']}")
         vr.yaz(v)
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------- futures
+
+def _vadeli_sembol(x, piyasa="kripto"):
+    """Crypto: 'btc', 'BTCUSDT', 'BTC-USDT-SWAP', 'BTC-USD' → 'BTC-USD'. Stock: 'nvda', 'xyz:NVDA' → 'NVDA'."""
+    x = (x or "").strip().upper().replace("/", "-")
+    if piyasa == "hisse":
+        x = x.split(":")[-1].replace("-PERP", "").strip()
+        if not x or len(x) > 12 or not all(c.isalnum() or c in ".-" for c in x):
+            raise ValueError("Enter a valid stock symbol (e.g. NVDA)")
+        return x
+    for son in ("-USDT-SWAP", "-SWAP", "-USDT", "USDT", "-USD"):
+        if x.endswith(son):
+            x = x[: -len(son)]
+            break
+    x = x.strip("-")
+    if not x or not x.replace("-", "").isalnum() or len(x) > 20:
+        raise ValueError("Enter a valid symbol (e.g. BTC)")
+    return x + "-USD"
+
+
+def _vadeli(v):
+    return v.setdefault("vadeli", {"hareketler": [], "islemler": [], "ayar": {}})
+
+
+def _islem_dogrula(b, eski=None):
+    """Validates the trade form and returns the dict to store."""
+    yon = b.get("yon")
+    if yon not in ("long", "short"):
+        raise ValueError("Side must be long or short")
+    piyasa = "hisse" if b.get("piyasa") == "hisse" else "kripto"
+    i = {"id": (eski or {}).get("id") or vr.yeni_id(), "piyasa": piyasa, "sembol": _vadeli_sembol(b.get("sembol"), piyasa), "yon": yon,
+         "etiket": (b.get("etiket") or "").strip()[:40], "not": (b.get("not") or "")[:2000]}
+    if b.get("hizli"):
+        i.update({"hizli": True, "durum": "kapali", "sonuc": sayi(b.get("sonuc"), "Result", pozitif=False),
+                  "kapanis_tarih": tarih(b.get("kapanis_tarih"))})
+        return i
+    giris = sayi(b.get("giris"), "Entry price")
+    kaldirac = None if b.get("kaldirac") in (None, "") else sayi(b.get("kaldirac"), "Leverage")
+    if kaldirac is not None and kaldirac > 200:
+        raise ValueError("Leverage can be at most 200x")
+    if b.get("buyukluk") not in (None, ""):
+        buyukluk = sayi(b.get("buyukluk"), "Size")
+    else:   # margin × leverage / entry
+        if not kaldirac:
+            raise ValueError("Enter a size, or margin + leverage")
+        buyukluk = sayi(b.get("marj"), "Margin") * kaldirac / giris
+    i.update({"hizli": False, "giris": giris, "buyukluk": buyukluk, "kaldirac": kaldirac,
+              "stop": None if b.get("stop") in (None, "") else sayi(b.get("stop"), "Stop"),
+              "hedef": None if b.get("hedef") in (None, "") else sayi(b.get("hedef"), "Target"),
+              "acilis_tarih": tarih(b.get("acilis_tarih")), "durum": "acik", "cikis": None,
+              "kapanis_tarih": None, "komisyon": 0.0})
+    if i["stop"] is not None and (i["stop"] - giris) * (1 if yon == "long" else -1) >= 0:
+        raise ValueError("The stop must be " + ("below the entry on a long" if yon == "long" else "above the entry on a short"))
+    if b.get("durum") == "kapali":
+        _kapat(i, b)
+    return i
+
+
+def _kapat(i, b):
+    i["cikis"] = sayi(b.get("cikis"), "Exit price")
+    i["kapanis_tarih"] = tarih(b.get("kapanis_tarih"))
+    i["komisyon"] = 0.0 if b.get("komisyon") in (None, "") else sayi(b.get("komisyon"), "Fees", pozitif=False)
+    if i["komisyon"] < 0:
+        raise ValueError("Fees cannot be negative")
+    if i["kapanis_tarih"] < i["acilis_tarih"]:
+        raise ValueError("The close date cannot be before the open date")
+    i["durum"] = "kapali"
+
+
+def _ilk_tarih(i):
+    return min(t for t in (i.get("acilis_tarih"), i.get("kapanis_tarih")) if t)
+
+
+def _islem_ozet(i):
+    ad = i["sembol"].replace("-USD", "") + (" (stock)" if i.get("piyasa") == "hisse" else "")
+    return f"{ad} {'long' if i['yon'] == 'long' else 'short'}"
+
+
+@app.get("/api/vadeli/fiyatlar")
+def vadeli_fiyatlar():
+    """Current prices of open futures positions (polled while the Futures tab is open)."""
+    v = vr.oku()
+    acik = [i for i in vr.vadeli_islemleri(v) if i["durum"] == "acik"]
+    hl = fy.hl_fiyatlar() if any(i.get("piyasa") == "hisse" for i in acik) else {}
+    fiyatlar = fy.toplu([i["sembol"] for i in acik if not (i.get("piyasa") == "hisse" and hl.get(i["sembol"]))])
+    return jsonify({i["sembol"]: vr.vadeli_fiyat(i, fiyatlar, hl) for i in acik})
+
+
+@app.post("/api/vadeli/islem")
+def vadeli_islem_ekle():
+    b = request.get_json(force=True)
+    try:
+        i = _islem_dogrula(b)
+    except ValueError as e:
+        return hata(str(e))
+    with vr._KILIT:
+        v = vr.oku()
+        _vadeli(v)["islemler"].append(i)
+        vr.gecmisi_yenile(v, _ilk_tarih(i))
+        if i["durum"] == "kapali":
+            kz = vr.vadeli_gerceklesen(i)
+            vr.olay(v, "vadeli", f"Futures {_islem_ozet(i)} closed" + (" (quick entry)" if i.get("hizli") else ""), "vadeli", i["id"], kz)
+        else:
+            vr.olay(v, "vadeli", f"Futures {_islem_ozet(i)} opened: {i['buyukluk']:g} @ ${i['giris']:g}"
+                    + (f" · {i['kaldirac']:g}x" if i.get("kaldirac") else ""), "vadeli", i["id"])
+        vr.yaz(v)
+    return jsonify({"ok": True, "id": i["id"]})
+
+
+@app.put("/api/vadeli/islem/<iid>")
+def vadeli_islem_duzenle(iid):
+    b = request.get_json(force=True)
+    with vr._KILIT:
+        v = vr.oku()
+        l = _vadeli(v)["islemler"]
+        eski = next((x for x in l if x["id"] == iid), None)
+        if not eski:
+            return hata("Trade not found", 404)
+        try:
+            yeni = _islem_dogrula({**eski, "hizli": eski.get("hizli"),
+                                   "durum": eski["durum"], **b}, eski)
+        except ValueError as e:
+            return hata(str(e))
+        l[l.index(eski)] = yeni
+        vr.gecmisi_yenile(v, min(_ilk_tarih(eski), _ilk_tarih(yeni)))
+        vr.olay(v, "duzenleme", f"Futures {_islem_ozet(yeni)} edited", "vadeli", iid)
+        vr.yaz(v)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/vadeli/islem/<iid>/kapat")
+def vadeli_islem_kapat(iid):
+    b = request.get_json(force=True)
+    with vr._KILIT:
+        v = vr.oku()
+        i = next((x for x in _vadeli(v)["islemler"] if x["id"] == iid), None)
+        if not i or i["durum"] != "acik":
+            return hata("Open trade not found", 404)
+        try:
+            _kapat(i, b)
+        except ValueError as e:
+            i.update({"durum": "acik", "cikis": None, "kapanis_tarih": None, "komisyon": 0.0})
+            return hata(str(e))
+        kz = vr.vadeli_gerceklesen(i)
+        vr.gecmisi_yenile(v, i["kapanis_tarih"])
+        vr.olay(v, "vadeli", f"Futures {_islem_ozet(i)} closed @ ${i['cikis']:g}", "vadeli", iid, kz)
+        vr.yaz(v)
+    return jsonify({"ok": True, "kz": kz})
+
+
+@app.delete("/api/vadeli/islem/<iid>")
+def vadeli_islem_sil(iid):
+    with vr._KILIT:
+        v = vr.oku()
+        vd = _vadeli(v)
+        i = next((x for x in vd["islemler"] if x["id"] == iid), None)
+        vd["islemler"] = [x for x in vd["islemler"] if x["id"] != iid]
+        if i:
+            vr.gecmisi_yenile(v, _ilk_tarih(i))
+            vr.olay(v, "silme", f"Futures {_islem_ozet(i)} entry deleted", "vadeli", iid)
+        vr.yaz(v)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/vadeli/hareket")
+def vadeli_hareket():
+    """Transfer (deposit/withdraw) or balance adjustment. For an adjustment 'bakiye' = total balance on the exchange (incl. open P&L)."""
+    b = request.get_json(force=True)
+    with vr._KILIT:
+        v = vr.oku()
+        try:
+            tip = b.get("tip")
+            if tip not in ("yatir", "cek", "duzelt"):
+                raise ValueError("Type must be yatir, cek or duzelt")
+            h = {"id": vr.yeni_id(), "tarih": tarih(b.get("tarih")), "tip": tip,
+                 "kaynak": "dis" if b.get("kaynak") == "dis" else "nakit", "not": (b.get("not") or "")[:500]}
+            if tip == "duzelt":
+                hedef = sayi(b.get("bakiye"), "Exchange balance", pozitif=False)
+                if hedef < 0:
+                    raise ValueError("Balance cannot be negative")
+                simdi = vr.vadeli_degerle(v, fy.toplu(vr.sembol_listesi(v)))["ozsermaye"]
+                h["tutar"] = round(hedef - simdi, 2)
+                if abs(h["tutar"]) < 0.005:
+                    return jsonify({"ok": True, "fark": 0})
+            else:
+                h["tutar"] = sayi(b.get("tutar"), "Amount")
+                if tip == "cek":
+                    serbest = vr.vadeli_degerle(v, fy.toplu(vr.sembol_listesi(v)))["kullanilabilir"]
+                    if h["tutar"] > serbest + 1e-9:
+                        raise ValueError(f"The futures wallet has ${max(serbest, 0):,.2f} available (excluding open positions' margin); you can't withdraw more")
+        except ValueError as e:
+            return hata(str(e))
+        _vadeli(v)["hareketler"].append(h)
+        vr.gecmisi_yenile(v, h["tarih"])
+        mesaj = {"yatir": "Moved to futures wallet", "cek": "Withdrawn from futures wallet", "duzelt": "Futures wallet adjusted"}[tip]
+        if tip != "duzelt" and h["kaynak"] == "dis":
+            mesaj += " (from outside)" if tip == "yatir" else " (to outside)"
+        vr.olay(v, "nakit" if tip != "duzelt" else "vadeli", f"{mesaj}: ${abs(h['tutar']):,.2f}", "vadeli", None,
+                h["tutar"] if tip != "cek" else -h["tutar"])
+        vr.yaz(v)
+    return jsonify({"ok": True, "fark": h["tutar"]})
+
+
+@app.delete("/api/vadeli/hareket/<hid>")
+def vadeli_hareket_sil(hid):
+    with vr._KILIT:
+        v = vr.oku()
+        vd = _vadeli(v)
+        h = next((x for x in vd["hareketler"] if x["id"] == hid), None)
+        if h and h["tip"] == "yatir":
+            kalan = [x for x in vd["hareketler"] if x["id"] != hid]
+            if vr.vadeli_cuzdan({**v, "vadeli": {**vd, "hareketler": kalan}}) < -0.005:
+                return hata("Deleting this transfer would make the futures wallet negative. Delete the later withdrawals first.")
+        vd["hareketler"] = [x for x in vd["hareketler"] if x["id"] != hid]
+        if h:
+            vr.gecmisi_yenile(v, h["tarih"])
+            vr.olay(v, "silme", "Futures transfer/adjustment deleted", "vadeli")
+        vr.yaz(v)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/vadeli/ayar")
+def vadeli_ayar():
+    b = request.get_json(force=True)
+    with vr._KILIT:
+        v = vr.oku()
+        ay = _vadeli(v)["ayar"]
+        try:
+            if "gunluk_limit" in b:
+                ay["gunluk_limit"] = None if b["gunluk_limit"] in (None, "") else sayi(b["gunluk_limit"], "Daily limit")
+                if ay["gunluk_limit"] is not None and ay["gunluk_limit"] > 100:
+                    raise ValueError("The daily limit cannot exceed 100%")
+            if "risk_yuzde" in b:
+                ay["risk_yuzde"] = None if b["risk_yuzde"] in (None, "") else sayi(b["risk_yuzde"], "Risk %")
+        except ValueError as e:
+            return hata(str(e))
+        vr.yaz(v)
+    return jsonify({"ok": True, "ayar": ay})
 
 
 # ---------------------------------------------------------------- settings, end of day, backup

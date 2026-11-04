@@ -308,3 +308,42 @@ def grafik_mumlari(sembol: str, aralik: str = "1d", once: str = None, adet: int 
     if once:
         tum = [m for m in tum if m["time"] < once]
     return {"mumlar": tum[-adet:], "kaynak": "Yahoo", "daha_var": len(tum) > adet}
+
+
+# ---------------------------------------------------------------- Hyperliquid stock perps (HIP-3)
+HL_DEXLER = ("xyz", "para", "io", "mkts")   # order = priority (if a stock is listed on several dexes, the first wins)
+
+
+def _hl_mids(dex: str) -> dict:
+    import json as _json
+    import urllib.request
+    istek = urllib.request.Request("https://api.hyperliquid.xyz/info",
+                                   data=_json.dumps({"type": "allMids", "dex": dex}).encode(),
+                                   headers={"Content-Type": "application/json", "User-Agent": "portfoy-paneli"})
+    with urllib.request.urlopen(istek, timeout=8) as r:
+        return _json.loads(r.read().decode())
+
+
+def hl_fiyatlar() -> dict:
+    """Hyperliquid stock perp mid prices: {'NVDA': 190.2, …}. They trade 24/7, so they stay current when the market is closed.
+    No key needed; returns {} if unreachable (the caller falls back to Yahoo)."""
+    def cek():
+        def guvenli(dex):
+            try:
+                return _hl_mids(dex)
+            except Exception:
+                return {}
+        with ThreadPoolExecutor(max_workers=len(HL_DEXLER)) as ex:
+            sonuclar = list(ex.map(guvenli, HL_DEXLER))
+        out = {}
+        for mids in sonuclar:
+            for k, f in (mids or {}).items():
+                t = str(k).split(":")[-1].upper()
+                try:
+                    f = float(f)
+                except (TypeError, ValueError):
+                    continue
+                if f > 0 and t not in out:
+                    out[t] = f
+        return out
+    return _onbellekli(("hl",), cek) or {}

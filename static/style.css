@@ -17,6 +17,7 @@
   --c-kripto: #d95926;
   --c-hisse: #199e70;
   --c-opsiyon: #c98500;
+  --c-vadeli: #9085e9;
   --radius: 14px;
   --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.25);
 }
@@ -57,6 +58,9 @@ main { padding: 22px 24px 60px; max-width: 1500px; margin: 0 auto; }
 .sayfa.aktif { display: block; }
 .izgara { display: grid; gap: 16px; }
 .k4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.k5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1300px) { .k5 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px) { .k5 { grid-template-columns: repeat(2, 1fr); } }
 .k2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .k-ana { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
 .k-alt { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
@@ -322,3 +326,40 @@ table.aylik { border-collapse: separate; border-spacing: 4px; width: 100%; min-w
   color: var(--text-3); border-radius: 0 8px 8px 0; cursor: pointer; }
 .sil-x:hover { color: var(--neg); }
 .ayrac { width: 1px; height: 22px; background: var(--border-2); margin: 0 4px; align-self: center; }
+
+/* ---------------------------------------------------------------- vadeli */
+.vkart.vd-tehlike { border-color: rgba(236, 93, 93, 0.6); box-shadow: 0 0 0 1px rgba(236, 93, 93, 0.25), var(--shadow); }
+.vd-mini { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; font-size: 12.5px; }
+.vd-mini span { display: block; color: var(--text-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vd-mini b { display: block; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
+.vd-limit { border-color: rgba(236, 93, 93, 0.5) !important; color: var(--neg); }
+.vd-takvim { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.vd-takvim .gun-ad { text-align: center; color: var(--text-3); font-size: 11px; font-weight: 600; padding-bottom: 2px; }
+.vd-hucre { position: relative; min-height: 46px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border);
+  display: flex; align-items: flex-end; justify-content: center; padding: 4px 2px; }
+.vd-hucre.bos { background: transparent; border-color: transparent; }
+.vd-hucre .no { position: absolute; top: 3px; left: 6px; font-size: 10px; color: var(--text-3); }
+.vd-hucre .tutar { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
+.vd-hucre.poz { background: var(--pos-bg); border-color: rgba(63, 142, 240, 0.35); color: var(--pos); }
+.vd-hucre.neg { background: var(--neg-bg); border-color: rgba(236, 93, 93, 0.35); color: var(--neg); }
+.vd-hucre.bugun { outline: 1px solid var(--text-3); }
+.vd-istat-ust { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.vd-istat-ust > div { background: var(--panel-2); border-radius: 10px; padding: 10px 12px; }
+.vd-istat-ust b { display: block; font-size: 18px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.vd-detay { margin-top: 12px; }
+.vd-detay summary { cursor: pointer; color: var(--text-2); font-weight: 600; padding: 6px 0; }
+.vd-grup { margin-top: 10px; }
+.vd-not { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.tablo-kap { overflow-x: auto; }
+.vd-onizleme { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.vd-onizleme-izgara { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.vd-onizleme-izgara b { display: block; font-size: 15px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.vd-onizleme-izgara small { color: var(--text-3); font-size: 11px; }
+.vd-oneri { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 700px) { .vd-istat-ust { grid-template-columns: repeat(2, 1fr); } }
+.kart-bas .ay-nav { font-size: 14px; gap: 10px; }
+.uyari-yazi { color: var(--warn); font-size: 12.5px; }
+.vd-kurulum { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; border-color: var(--accent); }
+.vd-kurulum h3 { margin: 0 0 4px; }
+.vd-kurulum .btn { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 700px) { .vd-kurulum { flex-direction: column; align-items: stretch; } }

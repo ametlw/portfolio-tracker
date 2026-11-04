@@ -7,13 +7,15 @@ Your data stays on your machine in a single JSON file. No account, no login, no 
 ## Features
 
 - **Overview:** total balance, net P&L, today's change, allocation by class or asset, P&L chart, intraday P&L, performance and drawdown, P&L contribution per holding.
-- **Holdings:** Crypto / Stocks / Options tabs, each with its own summary, allocation and P&L chart. Click a card to open a detail panel:
+- **Holdings:** Crypto / Stocks / Futures / Options tabs, each with its own summary, allocation and P&L chart. Click a card to open a detail panel:
   - the holding's own P&L since the first buy,
   - a candlestick chart (crypto from Binance, stocks from Yahoo; daily/weekly; older data loads as you scroll left) with buy/sell markers, average cost, take-profit and scaled-buy levels,
   - take-profit targets and scaled-buy plans ("I sold" / "I bought" buttons record the trade in one click),
   - trade history.
-- **Options:** prices from the Yahoo option chain (bid/ask midpoint). An "unreliable price" badge appears when there is no bid or the spread is very wide. Expired options are closed automatically at intrinsic value.
-- **Options calculator:** pick a symbol, put/call, expiration and strike (premium and IV are filled in); move the underlying price, date and IV sliders to see P&L until expiry, breakeven and probability of profit. Load your own positions with one click.
+- **Futures:** track perpetual futures, crypto (live OKX prices) or stocks (Hyperliquid stock perps, 24/7). A separate futures wallet works like your exchange account: set it up once with the balance you hold there (from outside or moved from the panel's cash), and trades run inside it with used/available margin. The trade form shows size, approximate liquidation, risk at the stop, R/R and a suggested margin for a chosen % risk; if the wallet is short it offers to move the difference from cash. Close a trade with the exit price and fees; or log just the result with "Quick result". Also: deposit/withdraw, "Adjust balance" to match the exchange (funding, fees), a futures calendar, stats (win rate, profit factor, average R, by side/symbol/tag), a filterable trade journal and an optional daily loss-limit warning. The wallet is included in the total balance.
+- **Options:** prices from the Yahoo option chain (bid/ask midpoint), updated only during the US session. Outside it (and in the 2 hours after the close, when the closing quote is captured) the value stays at the last session price, so bogus overnight quotes never reach your balance. An "unreliable price" badge appears when the quote is bad during the session. Expired options are closed automatically at intrinsic value.
+- **Calculator:** pick a symbol, put/call, expiration and strike (premium and IV are filled in); move the underlying price, date and IV sliders to see P&L until expiry, breakeven and probability of profit. Load your own positions with one click.
+- **Back-dated changes:** adding a trade, transfer or deposit with a past date recalculates the daily history from that date using closing prices.
 - **Watchlist:** what you want to buy, why, at what price, with an optional scaled-buy plan. "I bought" turns it into a holding.
 - **Journal:** daily P&L on a calendar with weekly totals, best/worst day and a monthly returns table.
 - **History:** every action with date and time, filterable and searchable.
@@ -81,6 +83,7 @@ Do not expose the server to the internet or your local network (for example by c
 
 - Stocks, options, futures and FX: Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance). Data may be delayed (futures about 10 minutes).
 - Live crypto prices: OKX public WebSocket. Crypto candles, daily closes and previous close: Binance public API (not available from US IP addresses; Yahoo is used instead).
+- Stock perp prices: Hyperliquid public info API (HIP-3 markets; no key). If unreachable, Yahoo is used.
 
 This tool is not investment advice. Prices and calculations may be wrong or delayed; always check figures with your broker.
 

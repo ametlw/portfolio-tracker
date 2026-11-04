@@ -19,10 +19,10 @@ let LW = null;               // open lightweight-chart instance
 const AYLAR = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const AYK = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const GUNLER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const SINIF_AD = { nakit: "Cash", kripto: "Crypto", hisse: "Stocks", opsiyon: "Options" };
-const SINIF_TEK = { nakit: "cash", kripto: "crypto", hisse: "stock", opsiyon: "option" };
+const SINIF_AD = { nakit: "Cash", kripto: "Crypto", hisse: "Stocks", opsiyon: "Options", vadeli: "Futures" };
+const SINIF_TEK = { nakit: "cash", kripto: "crypto", hisse: "stock", opsiyon: "option", vadeli: "futures" };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const SINIF_RENK = () => ({ nakit: css("--c-nakit"), kripto: css("--c-kripto"), hisse: css("--c-hisse"), opsiyon: css("--c-opsiyon") });
+const SINIF_RENK = () => ({ nakit: css("--c-nakit"), kripto: css("--c-kripto"), hisse: css("--c-hisse"), opsiyon: css("--c-opsiyon"), vadeli: css("--c-vadeli") });
 const KATEGORIK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
 const DIGER = "#6f7891";
 
@@ -284,9 +284,9 @@ function anaEkran() {
   let veri;
   if (DAGILIM === "sinif") {
     const r = SINIF_RENK();
-    veri = ["nakit", "kripto", "hisse", "opsiyon"].filter((k) => D.sinif[k] > 0.005).map((k) => ({ ad: SINIF_AD[k], deger: D.sinif[k], renk: r[k] }));
+    veri = ["nakit", "kripto", "hisse", "opsiyon", "vadeli"].filter((k) => D.sinif[k] > 0.005).map((k) => ({ ad: SINIF_AD[k], deger: D.sinif[k], renk: r[k] }));
   } else {
-    veri = renklendir([{ ad: "Cash", deger: D.nakit }].concat(D.varliklar.filter((v) => v.acik && v.deger > 0).map((v) => ({ ad: v.ad, deger: v.deger }))).filter((x) => x.deger > 0.005));
+    veri = renklendir([{ ad: "Cash", deger: D.nakit }].concat(D.varliklar.filter((v) => v.acik && v.deger > 0).map((v) => ({ ad: v.ad, deger: v.deger }))).concat(D.sinif.vadeli > 0 ? [{ ad: "Futures", deger: D.sinif.vadeli }] : []).filter((x) => x.deger > 0.005));
   }
   const toplam = donutCiz("donut", "#donut", veri);
   $("#donut-toplam").textContent = para(toplam);
@@ -375,17 +375,25 @@ function sinifOzeti(sinif) {
 
 function varliklarSayfasi() {
   const r = SINIF_RENK();
-  $("#v-ozet").innerHTML = ["kripto", "hisse", "opsiyon"].map((s) => {
+  // order: Cash · Crypto · Stocks · Futures · Options
+  const nakitKart = `<div class="kart tiklanir" data-nakit-gecmis="1"><div class="etiket"><span class="nokta" style="display:inline-block;background:${r.nakit};margin-right:6px"></span>Cash</div>
+    <div class="buyuk">${para(D.nakit)}</div><div class="alt-yazi">Click for deposit/withdrawal history</div></div>`;
+  const vo = vdOzet();
+  const vadeliKart = `<div class="kart tiklanir ${VSINIF === "vadeli" ? "secili" : ""}" data-sinif-git="vadeli">
+      <div class="etiket"><span class="nokta" style="display:inline-block;background:${r.vadeli};margin-right:6px"></span>Futures · ${D.vadeli.pozisyonlar.length} open</div>
+      <div class="buyuk">${para(vo.ozs)}</div><div class="alt-yazi ${isaretSinif(vo.kz)}">${vo.kz ? para(vo.kz, { isaret: true }) + " total" : "—"}</div></div>`;
+  const sinifKart = (s) => {
     const o = sinifOzeti(s);
     return `<div class="kart tiklanir ${s === VSINIF ? "secili" : ""}" data-sinif-git="${s}">
       <div class="etiket"><span class="nokta" style="display:inline-block;background:${r[s]};margin-right:6px"></span>${SINIF_AD[s]} · ${o.sayi} ${o.sayi === 1 ? "position" : "positions"}</div>
       <div class="buyuk" data-canli="sinif-${s}">${para(o.deger)}</div>
       <div class="alt-yazi ${isaretSinif(o.kz)}" data-canli="sinif-kz-${s}">${o.kz ? para(o.kz, { isaret: true }) + " since first buy" : "—"}</div></div>`;
-  }).join("") + `<div class="kart tiklanir" data-nakit-gecmis="1"><div class="etiket"><span class="nokta" style="display:inline-block;background:${r.nakit};margin-right:6px"></span>Cash</div>
-    <div class="buyuk">${para(D.nakit)}</div><div class="alt-yazi">Click for deposit/withdrawal history</div></div>`;
+  };
+  $("#v-ozet").innerHTML = nakitKart + sinifKart("kripto") + sinifKart("hisse") + vadeliKart + sinifKart("opsiyon");
 
   $$("#v-alt-sekmeler button").forEach((b) => b.classList.toggle("aktif", b.dataset.sinif === VSINIF));
-  $("#sinif-ekle-btn").textContent = `+ Add ${SINIF_TEK[VSINIF]}`;
+  $("#sinif-ekle-btn").textContent = VSINIF === "vadeli" ? "+ Futures trade" : `+ Add ${SINIF_TEK[VSINIF]}`;
+  if (VSINIF === "vadeli") return vadeliSayfasi();
 
   const o = sinifOzeti(VSINIF);
   const kapali = D.varliklar.filter((v) => !v.acik && v.sinif === VSINIF);
@@ -462,7 +470,7 @@ function varlikKarti(v) {
   const sag = v.sinif === "opsiyon" ? `<div><span>Underlying</span><b class="num">${fiyatYaz(v.dayanak_fiyat)}</b></div>` :
     `<div><span>Daily</span><b class="num ${isaretSinif(v.gunluk_yuzde)}" data-canli="gun-${v.id}">${yuzde(v.gunluk_yuzde)}</b></div>`;
   return `<div class="vkart ${hedefGeldi ? "vurgu" : ""}" data-detay="${v.id}">
-    <div class="vkart-bas"><div><div class="vkart-ad">${esc(v.ad)}${kaynak}${kot ? ` <span class="rozet uyari" title="${esc(kot)}">unreliable price</span>` : ""}${canli}</div><div class="vkart-sembol">${alt}</div></div>
+    <div class="vkart-bas"><div><div class="vkart-ad">${esc(v.ad)}${kaynak}${kot ? ` <span class="rozet uyari" title="${esc(kot)}">${v.fiyat_kaynagi === "son_guvenilir" ? "last reliable price" : "unreliable price"}</span>` : ""}${v.fiyat_kaynagi === "seans_kapanis" ? ` <span class="rozet" title="US market closed; valued at the last session price. Updates when the session opens (9:30 New York).">market closed</span>` : ""}${canli}</div><div class="vkart-sembol">${alt}</div></div>
       <button class="menu-btn" data-menu="${v.id}" aria-label="Options">⋯</button></div>
     <div class="vkart-deger"><span class="orta" data-canli="deger-${v.id}">${para(v.deger)}</span>
       <span class="rozet ${isaretSinif(v.kz)}" data-canli="kz-${v.id}">${para(v.kz, { isaret: true })} · ${yuzde(v.kz_yuzde)}</span></div>
@@ -484,9 +492,14 @@ function varlikKarti(v) {
 function kotasyonUyari(v) {
   const k = v.kotasyon;
   if (!k || k.durum === "iyi") return null;
-  if (k.durum === "genis") return `Bid ${fiyatYaz(k.alis)} / ask ${fiyatYaz(k.satis)}: spread ${nf(0, 0).format(((k.satis - k.alis) / k.fiyat) * 100)}%. Valued at mid; a real sale would fill closer to the bid.`;
-  if (k.durum === "alis_yok") return `No bid (0). Valued at the last trade price (${fiyatYaz(k.son)}), which may be stale.`;
-  return `No bid/ask quote. Valued at the last trade price (${fiyatYaz(k.son)}), which may be stale.`;
+  const neden = k.durum === "genis" ? `Bid ${fiyatYaz(k.alis)} / ask ${fiyatYaz(k.satis)}, spread very wide (happens when the market is closed).`
+    : k.durum === "alis_yok" ? "No bid (0)." : "No bid/ask quote.";
+  if (v.fiyat_kaynagi === "son_guvenilir") {
+    const z = v.seans_fiyati && v.seans_fiyati.zaman;
+    return `${neden} Valued at the last clean session price (${fiyatYaz(v.fiyat)}${z ? `, ${tarihTR(z.slice(0, 10))} ${z.slice(11, 16)} NY` : ""}).`;
+  }
+  if (v.fiyat_kaynagi === "elle") return `${neden} Valued at the price you entered manually.`;
+  return `${neden} Valued at the last trade price (${fiyatYaz(v.fiyat)}), which may be stale.`;
 }
 
 function varlikMenusu(id, dugme) {
@@ -916,7 +929,7 @@ function aylikTablo() {
 
 // ================================================================== HISTORY
 const OLAY_SIMGE = { alim: ["▲", "var(--pos)"], satis: ["▼", "var(--neg)"], nakit: ["$", "var(--c-nakit)"], plan: ["◎", "var(--warn)"],
-  izleme: ["◉", "var(--text-2)"], duzenleme: ["✎", "var(--text-2)"], silme: ["✕", "var(--neg)"], ayar: ["⚙", "var(--text-2)"] };
+  izleme: ["◉", "var(--text-2)"], vadeli: ["⇅", "var(--c-vadeli)"], duzenleme: ["✎", "var(--text-2)"], silme: ["✕", "var(--neg)"], ayar: ["⚙", "var(--text-2)"] };
 function gecmisSayfasi() {
   const ara = ($("#g-ara").value || "").toLocaleLowerCase("en");
   const l = (D.olaylar || []).filter((o) => (!GFILTRE || o.tip === GFILTRE) && (!ara || o.mesaj.toLocaleLowerCase("en").includes(ara)));
@@ -939,6 +952,7 @@ function okxIstenen() {
   if (D) {
     D.varliklar.filter((v) => v.sinif === "kripto" && v.acik).forEach((v) => s.add(okxSembol(v.sembol)));
     D.izleme.filter((w) => w.sinif === "kripto").forEach((w) => s.add(okxSembol(w.sembol)));
+    vdOkxIstenen().forEach((x) => s.add(x));
   }
   return s;
 }
@@ -951,6 +965,7 @@ function okxBaglan() {
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (!m.data || !m.arg || m.arg.channel !== "tickers") return;
     for (const t of m.data) {
+      if (t.instId.endsWith("-SWAP")) { const f = Number(t.last); if (f > 0) CANLI_V[t.instId.replace(/-USDT-SWAP$/, "-USD")] = f; continue; }
       const sembol = t.instId.replace(/-USDT$/, "-USD"), f = Number(t.last);
       if (f > 0) { CANLI[sembol] = f; CANLI[sembol + "_acilis"] = Number(t.sodUtc0) || Number(t.open24h) || null; }
     }
@@ -969,6 +984,7 @@ function okxAboneOl() {
 /** Applies live crypto prices to D and updates the affected numbers in place. */
 function canliUygula(ekran) {
   if (!D) return;
+  if (ekran) vdCanliUygula();
   let degisti = false;
   for (const v of D.varliklar) {
     if (v.sinif !== "kripto" || !v.acik || !CANLI[v.sembol]) continue;
@@ -1453,7 +1469,7 @@ document.addEventListener("click", (e) => {
   if (t.id === "yenile-btn") { seritYukle(); return yukle(true); }
   if (t.id === "ayar-btn") return ayarModal();
   if (t.id === "paylas-portfoy") return paylasimModal(null);
-  if (t.id === "sinif-ekle-btn") return varlikEkleModal({ sinif: VSINIF });
+  if (t.id === "sinif-ekle-btn") return VSINIF === "vadeli" ? vdIslemModal() : varlikEkleModal({ sinif: VSINIF });
   if (t.id === "yatir-btn") return nakitModal("yatir");
   if (t.id === "cek-btn") return nakitModal("cek");
   if (t.id === "izleme-ekle-btn") return izlemeModal();

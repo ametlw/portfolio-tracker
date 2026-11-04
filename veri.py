@@ -85,7 +85,7 @@ class _Kilit:
 
 _KILIT = _Kilit()
 
-SINIFLAR = ["nakit", "kripto", "hisse", "opsiyon"]
+SINIFLAR = ["nakit", "kripto", "hisse", "opsiyon", "vadeli"]
 
 
 def yeni_id() -> str:
@@ -102,7 +102,7 @@ def bos_veri() -> dict:
     return {"ayarlar": {"baslangic_tarihi": bugun().isoformat(), "baslangic_nakit": 0.0,
                         "baslangic_bakiye": None, "baslangic_usdtry": None},
             "varliklar": [], "islemler": [], "nakit_hareketleri": [], "izleme": [], "gunluk": {},
-            "olaylar": [], "gun_ici": {}}
+            "olaylar": [], "gun_ici": {}, "vadeli": {"hareketler": [], "islemler": [], "ayar": {}}}
 
 
 def oku() -> dict:
@@ -137,6 +137,12 @@ def ny_simdi() -> datetime:
     except Exception:   # no time zone data: approximate with UTC-5
         from datetime import timezone
         return datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=5)
+
+
+def abd_seans_acik(ny: datetime | None = None) -> bool:
+    """Is the US regular session open (weekdays 09:30–16:00 New York)? Market holidays are not considered."""
+    ny = ny or ny_simdi()
+    return ny.weekday() < 5 and (9, 30) <= (ny.hour, ny.minute) < (16, 0)
 
 
 def kapanis_gecti_mi(gun: date) -> bool:
@@ -225,6 +231,13 @@ def nakit_bakiyesi(v: dict, kadar: date | None = None) -> float:
         if kadar and date.fromisoformat(h["tarih"]) > kadar:
             continue
         n += float(h["tutar"]) if h["tip"] == "yatir" else -float(h["tutar"])
+    # money moved from cash to the futures wallet leaves cash; money withdrawn from it returns to cash
+    for h in vadeli_hareketleri(v):
+        if h.get("kaynak", "nakit") != "nakit" or h["tip"] == "duzelt":
+            continue
+        if kadar and date.fromisoformat(h["tarih"]) > kadar:
+            continue
+        n += -float(h["tutar"]) if h["tip"] == "yatir" else float(h["tutar"])
     vmap = {x["id"]: x for x in v["varliklar"]}
     for i in v["islemler"]:
         if not i.get("nakit_etkisi", True):
@@ -245,7 +258,131 @@ def net_yatirim(v: dict, kadar: date | None = None) -> float:
         if kadar and date.fromisoformat(h["tarih"]) > kadar:
             continue
         t += float(h["tutar"]) if h["tip"] == "yatir" else -float(h["tutar"])
+    # money put into/taken out of the futures wallet from outside (bank, exchange directly) counts as investment
+    for h in vadeli_hareketleri(v):
+        if h.get("kaynak", "nakit") != "dis" or h["tip"] == "duzelt":
+            continue
+        if kadar and date.fromisoformat(h["tarih"]) > kadar:
+            continue
+        t += float(h["tutar"]) if h["tip"] == "yatir" else -float(h["tutar"])
     return t
+
+
+# ---------------------------------------------------------------- futures (perps: crypto or stock)
+# Separate wallet (like on an exchange): money is moved in from cash or from outside; trades run inside the wallet.
+# Wallet balance = transfers ± adjustments + realized P&L. Open positions' margin is the wallet's "used margin".
+# Futures value (counted in the portfolio) = wallet balance + open P&L.
+# Trade: {id, piyasa kripto|hisse, sembol ('BTC-USD' or 'NVDA'), yon long|short, hizli (quick), durum acik|kapali,
+#         acilis_tarih, kapanis_tarih, giris, cikis, buyukluk (qty), kaldirac, stop, hedef, komisyon, sonuc (quick), etiket, not}
+# Transfer: {id, tarih, tip yatir|cek|duzelt, tutar (signed for adjustments), kaynak nakit|dis, not}
+#   kaynak nakit: from/to the panel's cash; dis: from/to outside (money already on the exchange or from the bank → counts as investment)
+MMR = 0.005   # approximate maintenance margin rate, for the liquidation estimate
+
+
+def vadeli_hareketleri(v: dict) -> list:
+    return (v.get("vadeli") or {}).get("hareketler", [])
+
+
+def vadeli_islemleri(v: dict) -> list:
+    return (v.get("vadeli") or {}).get("islemler", [])
+
+
+def _yon(i: dict) -> float:
+    return 1.0 if i["yon"] == "long" else -1.0
+
+
+def vadeli_gerceklesen(i: dict) -> float:
+    """Net P&L of a closed trade (after fees)."""
+    if i.get("hizli"):
+        return float(i["sonuc"])
+    return (float(i["cikis"]) - float(i["giris"])) * float(i["buyukluk"]) * _yon(i) - float(i.get("komisyon") or 0)
+
+
+def vadeli_acik_kz(i: dict, fiyat):
+    if fiyat is None:
+        return None
+    return (float(fiyat) - float(i["giris"])) * float(i["buyukluk"]) * _yon(i)
+
+
+def vadeli_marj(i: dict) -> float:
+    """Margin tied to the position. Without leverage, 1x (full size)."""
+    if i.get("hizli"):
+        return 0.0
+    return float(i["giris"]) * float(i["buyukluk"]) / max(float(i.get("kaldirac") or 1), 1e-9)
+
+
+def vadeli_likidasyon(i: dict):
+    """Approximate liquidation price on isolated margin. None without leverage or at 1x."""
+    k = float(i.get("kaldirac") or 0)
+    if k <= 1 or i.get("hizli"):
+        return None
+    g = float(i["giris"])
+    return g * (1 - 1 / k + MMR) if i["yon"] == "long" else g * (1 + 1 / k - MMR)
+
+
+def vadeli_risk(i: dict):
+    """Loss if the stop is hit ($, positive). None without a stop."""
+    if i.get("hizli") or not i.get("stop"):
+        return None
+    return max((float(i["giris"]) - float(i["stop"])) * _yon(i), 0.0) * float(i["buyukluk"])
+
+
+def _gun_sonu_acik(i: dict, gun: date) -> bool:
+    if i.get("hizli") or date.fromisoformat(i["acilis_tarih"]) > gun:
+        return False
+    return i["durum"] == "acik" or date.fromisoformat(i["kapanis_tarih"]) > gun
+
+
+def vadeli_cuzdan(v: dict, kadar: date | None = None) -> float:
+    """Wallet balance: transfers ± adjustments + P&L of closed trades (excluding open P&L)."""
+    c = 0.0
+    for h in vadeli_hareketleri(v):
+        if kadar and date.fromisoformat(h["tarih"]) > kadar:
+            continue
+        c += -float(h["tutar"]) if h["tip"] == "cek" else float(h["tutar"])
+    for i in vadeli_islemleri(v):
+        if i["durum"] == "kapali" and (not kadar or date.fromisoformat(i["kapanis_tarih"]) <= kadar):
+            c += vadeli_gerceklesen(i)
+    return c
+
+
+def vadeli_akis(v: dict, kadar: date | None = None) -> float:
+    """Money moved into − out of the wallet (deposit/withdraw). Adjustments are P&L, not flows."""
+    return sum((float(h["tutar"]) if h["tip"] == "yatir" else -float(h["tutar"])) for h in vadeli_hareketleri(v)
+               if h["tip"] != "duzelt" and (not kadar or date.fromisoformat(h["tarih"]) <= kadar))
+
+
+def vadeli_kz(v: dict, gun: date, deger: float) -> float:
+    """Total futures P&L at the end of that day = futures value − net money moved into the wallet up to that day."""
+    return deger - vadeli_akis(v, gun)
+
+
+def vadeli_fiyat(i: dict, fiyatlar: dict, hl: dict):
+    """Stock perp: Hyperliquid (24/7), else Yahoo. Crypto: Binance/Yahoo."""
+    if i.get("piyasa") == "hisse" and hl.get(i["sembol"]):
+        return hl[i["sembol"]]
+    return fiyatlar.get(i["sembol"], (None, None))[0]
+
+
+def vadeli_degerle(v: dict, fiyatlar: dict) -> dict:
+    cuzdan = vadeli_cuzdan(v)
+    acik = [i for i in vadeli_islemleri(v) if i["durum"] == "acik"]
+    hl = fy.hl_fiyatlar() if any(i.get("piyasa") == "hisse" for i in acik) else {}
+    pozisyonlar, acik_kz, kullanilan, eksik = [], 0.0, 0.0, []
+    for i in acik:
+        f = vadeli_fiyat(i, fiyatlar, hl)
+        kz = vadeli_acik_kz(i, f)
+        m = vadeli_marj(i)
+        kullanilan += m
+        if kz is None:
+            eksik.append(i["sembol"].replace("-USD", "") + " (vadeli)")
+        else:
+            acik_kz += kz
+        pozisyonlar.append({**i, "fiyat": f, "kz": kz, "buyukluk_usd": float(i["giris"]) * float(i["buyukluk"]),
+                            "marj": m, "likidasyon": vadeli_likidasyon(i), "risk": vadeli_risk(i)})
+    ozs = cuzdan + acik_kz
+    return {"cuzdan": cuzdan, "acik_kz": acik_kz, "ozsermaye": ozs, "kullanilan_marj": kullanilan,
+            "kullanilabilir": ozs - kullanilan, "pozisyonlar": pozisyonlar, "eksik": eksik}
 
 
 # ---------------------------------------------------------------- prices
@@ -253,12 +390,29 @@ def net_yatirim(v: dict, kadar: date | None = None) -> float:
 def varlik_fiyati(varlik: dict, fiyatlar: dict):
     """(current price, previous close, source). Options have no previous close here."""
     if varlik["sinif"] == "opsiyon":
+        # Option prices update only during the US session. Outside it Yahoo can return stale or bogus bid/ask
+        # (e.g. 0.05 / 8.75 → mid 4.40), so the balance stays at the last session price.
+        # In session: a clean quote (bid and ask present, reasonable spread) is used and stored as the "session price";
+        # otherwise manual price > last session price > last trade / bid.
+        # A clean quote in the 2 hours after the close (NY 16:00–18:00) is the closing quote (no trading),
+        # so it is stored too: the price stays at the close even if the panel wasn't open in the last minutes.
         o = varlik["opsiyon"]
-        canli = fy.opsiyon_fiyati(o["dayanak"], o["vade"], float(o["strike"]), o["tur"])
-        if canli:
-            return canli, None, "canlı"
+        ny = ny_simdi()
+        seans = abd_seans_acik(ny)
+        kapanis_sonrasi = ny.weekday() < 5 and (16, 0) <= (ny.hour, ny.minute) < (18, 0)
+        k = fy.opsiyon_kotasyon(o["dayanak"], o["vade"], float(o["strike"]), o["tur"])
+        if (seans or kapanis_sonrasi) and k and k["durum"] == "iyi":
+            varlik["seans_fiyati"] = {"fiyat": k["fiyat"], "zaman": ny.isoformat(timespec="minutes")}
+            return k["fiyat"], None, "canlı" if seans else "seans_kapanis"
         if varlik.get("elle_fiyat") is not None:
             return float(varlik["elle_fiyat"]), None, "elle"
+        sf = varlik.get("seans_fiyati") or {}
+        if sf.get("fiyat"):
+            return float(sf["fiyat"]), None, "seans_kapanis" if not seans else "son_guvenilir"
+        if k and k["son"] > 0:   # the last trade is a real session trade
+            return k["son"], None, "seans_kapanis" if not seans else "son_islem"
+        if seans and k:
+            return (k["alis"] if k["alis"] > 0 else k["fiyat"]), None, "son_islem"
         return None, None, "yok"
     son, onceki = fiyatlar.get(varlik["sembol"], (None, None))
     if son is not None:
@@ -276,6 +430,7 @@ def sembol_listesi(v: dict) -> list:
         else:
             s.append(x["sembol"])
     s += [x["sembol"] for x in v["izleme"]]
+    s += [i["sembol"] for i in vadeli_islemleri(v) if i["durum"] == "acik"]
     return s
 
 
@@ -325,7 +480,7 @@ def degerle(v: dict) -> dict:
         dayanak = kotasyon = None
         if var["sinif"] == "opsiyon":
             dayanak = fiyatlar.get(var["opsiyon"]["dayanak"], (None, None))[0]
-            if kaynak == "canlı" and poz["miktar"]:
+            if kaynak in ("canlı", "son_guvenilir", "son_islem") and poz["miktar"]:
                 o = var["opsiyon"]
                 kotasyon = fy.opsiyon_kotasyon(o["dayanak"], o["vade"], float(o["strike"]), o["tur"])
         kalemler.append({
@@ -337,8 +492,9 @@ def degerle(v: dict) -> dict:
             "kademeli_durum": kademeli_durumu(var.get("kademeli", []), f),
         })
     nakit = nakit_bakiyesi(v)
-    sinif = {"nakit": nakit, "kripto": 0.0, "hisse": 0.0, "opsiyon": 0.0}
-    eksik = []
+    vd = vadeli_degerle(v, fiyatlar)
+    sinif = {"nakit": nakit, "kripto": 0.0, "hisse": 0.0, "opsiyon": 0.0, "vadeli": vd["ozsermaye"]}
+    eksik = list(vd["eksik"])
     for k in kalemler:
         if not k["acik"]:
             continue
@@ -356,7 +512,7 @@ def degerle(v: dict) -> dict:
                        "hedefe_uzaklik": ((son / float(hedef) - 1) * 100) if (son and hedef) else None,
                        "kademeli_durum": kademeli_durumu(w.get("kademeli", []), son)})
     return {"kalemler": kalemler, "sinif": sinif, "toplam": toplam, "nakit": nakit,
-            "usdtry": usdtry, "eksik_fiyat": eksik, "izleme": izleme}
+            "usdtry": usdtry, "eksik_fiyat": eksik, "izleme": izleme, "vadeli": vd}
 
 
 def kar_al_durumu(var, poz, f):
@@ -516,7 +672,15 @@ def gun_degerle(v: dict, gun: date, seriler: dict, guncel: dict) -> dict:
             eksik.append(var["ad"])
         kalemler.append({"id": var["id"], "sinif": var["sinif"], "deger": poz["miktar"] * f * carpan(var)})
     nakit = nakit_bakiyesi(v, kadar=gun)
-    sinif = {"nakit": nakit, "kripto": 0.0, "hisse": 0.0, "opsiyon": 0.0}
+    vadeli = vadeli_cuzdan(v, kadar=gun)
+    for i in vadeli_islemleri(v):
+        if _gun_sonu_acik(i, gun):
+            f = _kapanis(seriler.get(i["sembol"], {}), gun)
+            if f is None:
+                eksik.append(i["sembol"] + " (vadeli)")
+            else:
+                vadeli += vadeli_acik_kz(i, f)
+    sinif = {"nakit": nakit, "kripto": 0.0, "hisse": 0.0, "opsiyon": 0.0, "vadeli": vadeli}
     for k in kalemler:
         sinif[k["sinif"]] += k["deger"]
     return {"kalemler": kalemler, "sinif": sinif, "toplam": sum(sinif.values()), "nakit": nakit,
@@ -532,6 +696,18 @@ def _kesin_mi(kayit: dict, gun: date) -> bool:
         return datetime.fromisoformat(kayit["zaman"]) >= datetime.combine(gun + timedelta(days=1), datetime.min.time())
     except Exception:
         return False
+
+
+def gecmisi_yenile(v: dict, tarih: str | None, en_fazla_gun: int = 180) -> None:
+    """A back-dated change (trade, transfer…) makes the snapshots after that date stale:
+    daily entries from that date to yesterday are removed and eksikleri_tamamla rewrites them from closing prices.
+    Only the range that can be refilled (the last en_fazla_gun days) is removed."""
+    if not tarih:
+        return
+    bas = max(date.fromisoformat(str(tarih)[:10]), bugun() - timedelta(days=en_fazla_gun))
+    for g in list(v["gunluk"]):
+        if bas.isoformat() <= g < bugun().isoformat():
+            del v["gunluk"][g]
 
 
 def eksikleri_tamamla(v: dict, guncel_degerler: dict, en_fazla_gun: int = 180) -> int:
@@ -550,6 +726,7 @@ def eksikleri_tamamla(v: dict, guncel_degerler: dict, en_fazla_gun: int = 180) -
     semboller = {"TRY=X"}
     for var in v["varliklar"]:
         semboller.add(var["opsiyon"]["dayanak"] if var["sinif"] == "opsiyon" else var["sembol"])
+    semboller |= {i["sembol"] for i in vadeli_islemleri(v) if not i.get("hizli")}
     seriler = {s: fy.kapanis_serisi(s, gunler[0], dun) for s in semboller}
     if not any(seriler.values()):
         return 0  # data source unreachable, will retry later
@@ -662,6 +839,13 @@ def katki(v: dict, s: list, kalemler: list, donem: str) -> list:
         fark = (k["deger"] or 0.0) - float(taban_deger.get(k["id"], 0.0)) - al + sat
         if abs(fark) >= 0.005:
             sonuc.append({"id": k["id"], "ad": k["ad"] or k["sembol"], "sinif": k["sinif"], "kz": round(fark, 2)})
+    # futures as one item: total futures P&L at period end − at period start
+    if vadeli_hareketleri(v) or vadeli_islemleri(v):
+        simdi = vadeli_kz(v, son_tarih, float(s[-1].get("sinif", {}).get("vadeli", 0.0)))
+        taban = vadeli_kz(v, islem_sonrasi, float(onceki[-1].get("sinif", {}).get("vadeli", 0.0))) if onceki else 0.0
+        fark = simdi - taban
+        if abs(fark) >= 0.005:
+            sonuc.append({"id": "vadeli", "ad": "Vadeli", "sinif": "vadeli", "kz": round(fark, 2)})
     return sorted(sonuc, key=lambda x: x["kz"])
 
 
@@ -737,4 +921,14 @@ def varlik_serileri(v: dict, s: list, kalemler: list) -> tuple[dict, dict]:
             son_bilinen.update(gunler[t])
             out.append([t, round(sum(son_bilinen.values()), 2)])
         sinif[sn] = out
+    # futures: daily total P&L (realized + open)
+    tarihler = [h["tarih"] for h in vadeli_hareketleri(v)] + \
+               [i.get("acilis_tarih") or i.get("kapanis_tarih") for i in vadeli_islemleri(v)]
+    if tarihler:
+        ilk = min(tarihler)
+        nokta = [[r["tarih"], round(vadeli_kz(v, date.fromisoformat(r["tarih"]), float(r.get("sinif", {}).get("vadeli", 0.0))), 2)]
+                 for r in s if r["tarih"] >= ilk]
+        if not nokta or nokta[0][0] > ilk:
+            nokta.insert(0, [ilk, 0.0])
+        sinif["vadeli"] = nokta
     return sonuc, sinif

@@ -17,7 +17,7 @@
     <button class="sekme aktif" data-sayfa="ana">Overview</button>
     <button class="sekme" data-sayfa="varliklar">Holdings</button>
     <button class="sekme" data-sayfa="izleme">Watchlist</button>
-    <button class="sekme" data-sayfa="senaryo">Options calculator</button>
+    <button class="sekme" data-sayfa="senaryo">Calculator</button>
     <button class="sekme" data-sayfa="gunluk">Journal</button>
     <button class="sekme" data-sayfa="gecmis">History</button>
     <button class="sekme" data-sayfa="grafik">Charts</button>
@@ -94,10 +94,10 @@
 
   <!-- ===================== HOLDINGS ===================== -->
   <section class="sayfa" id="sayfa-varliklar">
-    <div class="izgara k4" id="v-ozet"></div>
+    <div class="izgara k5" id="v-ozet"></div>
     <div class="ara-ust" style="margin-top:22px">
       <div class="alt-sekmeler" id="v-alt-sekmeler">
-        <button data-sinif="kripto" class="aktif">Crypto</button><button data-sinif="hisse">Stocks</button><button data-sinif="opsiyon">Options</button>
+        <button data-sinif="kripto" class="aktif">Crypto</button><button data-sinif="hisse">Stocks</button><button data-sinif="vadeli">Futures</button><button data-sinif="opsiyon">Options</button>
       </div>
       <div class="btnlar">
         <button class="btn ana" id="sinif-ekle-btn">+ Add</button>
@@ -167,7 +167,7 @@
     <div class="ara-ust">
       <div class="secim" id="g-filtre">
         <button data-f="" class="aktif">All</button><button data-f="alim">Buys</button><button data-f="satis">Sells</button>
-        <button data-f="nakit">Cash</button><button data-f="plan">Plans</button><button data-f="izleme">Watchlist</button>
+        <button data-f="nakit">Cash</button><button data-f="vadeli">Futures</button><button data-f="plan">Plans</button><button data-f="izleme">Watchlist</button>
         <button data-f="duzenleme">Edits</button><button data-f="silme">Deletes</button>
       </div>
       <input id="g-ara" class="arama" placeholder="Search (e.g. BTC)">
@@ -197,5 +197,6 @@
 <input type="file" id="yedek-dosya" accept=".json,application/json" style="display:none">
 
 <script src="/static/app.js"></script>
+<script src="/static/vadeli.js"></script>
 </body>
 </html>
