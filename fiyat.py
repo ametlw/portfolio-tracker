@@ -39,7 +39,18 @@ def _yf():
 
 
 def son_ve_onceki(sembol: str):
-    """(last price, previous close), or (None, None) if not found."""
+    """(last price, previous close), or (None, None) if not found.
+    Crypto: Binance (last = live, previous = yesterday's daily candle close); falls back to Yahoo."""
+    cift = _binance_cift(sembol)
+    if cift:
+        def cek_binance():
+            m = _binance_klines(cift, "1d", "&limit=2")
+            if len(m) < 2:
+                return None
+            return (m[-1]["close"], m[-2]["close"])
+        b = _onbellekli(("bfiyat", cift), cek_binance)
+        if b:
+            return b
     def cek():
         h = _yf().Ticker(sembol).history(period="7d", interval="1d")
         k = h["Close"].dropna()
@@ -129,7 +140,12 @@ def opsiyon_onceki_kapanis(dayanak: str, vade: str, strike: float, tur: str):
 
 
 def kapanis_serisi(sembol: str, bas: date, bit: date) -> dict:
-    """{'YYYY-MM-DD': close} — daily closes from 10 days before bas up to bit."""
+    """{'YYYY-MM-DD': close} — daily closes from 10 days before bas up to bit.
+    Crypto: Binance daily candle closes (so daily P&L matches what you see on Binance); falls back to Yahoo."""
+    if _binance_cift(sembol):
+        b = binance_kapanislar(sembol, bas - timedelta(days=10), bit)
+        if b:
+            return b
     def cek():
         h = _yf().Ticker(sembol).history(start=(bas - timedelta(days=10)).isoformat(),
                                          end=(bit + timedelta(days=1)).isoformat(), interval="1d")
@@ -216,24 +232,52 @@ def _binance_cift(sembol: str):
     return sembol[:-4].replace("-", "") + "USDT"
 
 
+def _binance_klines(cift: str, aralik: str, ek: str = "") -> list:
+    """Binance public candles: [{time (UTC day), open, high, low, close}]."""
+    import json as _json
+    import urllib.request
+    from datetime import datetime, timezone
+    url = f"https://api.binance.com/api/v3/klines?symbol={cift}&interval={aralik}{ek}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "portfoy-paneli"}), timeout=10) as r:
+        ham = _json.loads(r.read().decode())
+    return [{"time": datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc).date().isoformat(),
+             "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4])} for k in ham]
+
+
 def binance_mumlar(sembol: str, aralik: str = "1d", once: str = None) -> list:
     """Binance public daily/weekly candles (no API key). once: the 1000 candles before this date."""
     cift = _binance_cift(sembol)
     if not cift:
         return []
     def cek():
-        import json as _json
-        import urllib.request
         from datetime import datetime, timezone
-        url = f"https://api.binance.com/api/v3/klines?symbol={cift}&interval={aralik}&limit=1000"
+        ek = "&limit=1000"
         if once:
             bit = int(datetime.fromisoformat(once).replace(tzinfo=timezone.utc).timestamp() * 1000) - 1
-            url += f"&endTime={bit}"
-        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "portfoy-paneli"}), timeout=10) as r:
-            ham = _json.loads(r.read().decode())
-        return [{"time": datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc).date().isoformat(),
-                 "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4])} for k in ham]
+            ek += f"&endTime={bit}"
+        return _binance_klines(cift, aralik, ek)
     return _onbellekli(("binance", cift, aralik, once), cek) or []
+
+
+def binance_kapanislar(sembol: str, bas: date, bit: date) -> dict:
+    """Crypto daily closes from Binance: {'YYYY-MM-DD': close}. Days are UTC (close at 00:00 UTC).
+    Returns {} if the pair is not on Binance or Binance is unreachable (the caller then uses Yahoo)."""
+    cift = _binance_cift(sembol)
+    if not cift:
+        return {}
+    def cek():
+        from datetime import datetime, timezone
+        bas_ms = int(datetime.combine(bas, datetime.min.time(), tzinfo=timezone.utc).timestamp() * 1000)
+        out, bitis = {}, bit.isoformat()
+        while True:   # pages of 1000
+            m = _binance_klines(cift, "1d", f"&startTime={bas_ms}&limit=1000")
+            for k in m:
+                if k["time"] <= bitis:
+                    out[k["time"]] = k["close"]
+            if len(m) < 1000 or m[-1]["time"] >= bitis:
+                return out
+            bas_ms = int(datetime.fromisoformat(m[-1]["time"]).replace(tzinfo=timezone.utc).timestamp() * 1000) + 86400000
+    return _onbellekli(("bkapanis", cift, bas.isoformat(), bit.isoformat()), cek) or {}
 
 
 def yahoo_tum_mumlar(sembol: str, aralik: str = "1d") -> list:

@@ -183,7 +183,7 @@ def pozisyon(varlik: dict, islemler: list, kadar: date | None = None) -> dict:
     m = carpan(varlik)
     miktar = maliyet_top = gerceklesen = 0.0
     for i in sorted((x for x in islemler if x["varlik_id"] == varlik["id"]),
-                    key=lambda x: (x["tarih"], x.get("sira", 0))):
+                    key=lambda x: (x["tarih"], x.get("sira", 0), x["tip"] == "sat")):   # same day: buys first
         if kadar and date.fromisoformat(i["tarih"]) > kadar:
             continue
         q, p = float(i["miktar"]), float(i["fiyat"])
@@ -201,6 +201,22 @@ def pozisyon(varlik: dict, islemler: list, kadar: date | None = None) -> dict:
     return {"miktar": miktar, "maliyet": maliyet_top,
             "ort_maliyet": (maliyet_top / miktar / m) if miktar else None,
             "gerceklesen": gerceklesen}
+
+
+def satis_hatasi(varlik: dict, islemler: list) -> str | None:
+    """Replaying trades in date order, is anything sold that wasn't held at the time? Returns an error message if so."""
+    miktar = 0.0
+    for i in sorted((x for x in islemler if x["varlik_id"] == varlik["id"]),
+                    key=lambda x: (x["tarih"], x["tip"] == "sat")):   # same day: buys first
+        q = float(i["miktar"])
+        if i["tip"] == "al":
+            miktar += q
+        else:
+            if q > miktar + 1e-9:
+                return (f"On {i['tarih']} you held {miktar:g}, so {q:g} cannot be sold. "
+                        "Check the date.")
+            miktar -= q
+    return None
 
 
 def nakit_bakiyesi(v: dict, kadar: date | None = None) -> float:

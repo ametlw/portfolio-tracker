@@ -79,7 +79,7 @@ Do not expose the server to the internet or your local network (for example by c
 ## Data sources
 
 - Stocks, options, futures and FX: Yahoo Finance via [yfinance](https://github.com/ranaroussi/yfinance). Data may be delayed (futures about 10 minutes).
-- Live crypto prices: OKX public WebSocket. Crypto candles: Binance public API (not available from US IP addresses; Yahoo is used instead).
+- Live crypto prices: OKX public WebSocket. Crypto candles, daily closes and previous close: Binance public API (not available from US IP addresses; Yahoo is used instead).
 
 This tool is not investment advice. Prices and calculations may be wrong or delayed; always check figures with your broker.
 

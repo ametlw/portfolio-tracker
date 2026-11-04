@@ -317,15 +317,15 @@ def islem_ekle():
                 raise ValueError("Price cannot be negative")
             if tip == "al" and f == 0:
                 raise ValueError("Buy price cannot be zero")
+            yeni = {"id": vr.yeni_id(), "varlik_id": var["id"], "tarih": tarih(b.get("tarih")),
+                    "tip": tip, "miktar": miktar, "fiyat": f, "nakit_etkisi": True, "not": b.get("not") or ""}
             if tip == "sat":
-                eldeki = vr.pozisyon(var, v["islemler"])["miktar"]
-                if miktar > eldeki + 1e-9:
-                    raise ValueError(f"You hold {eldeki:g}, you cannot sell more than that")
+                sorun = vr.satis_hatasi(var, v["islemler"] + [yeni])
+                if sorun:
+                    raise ValueError(sorun)
         except ValueError as e:
             return hata(str(e))
-        v["islemler"].append({"id": vr.yeni_id(), "varlik_id": var["id"], "tarih": tarih(b.get("tarih")),
-                              "tip": tip, "miktar": miktar, "fiyat": f, "nakit_etkisi": True,
-                              "not": b.get("not") or ""})
+        v["islemler"].append(yeni)
         c = 100 if var["sinif"] == "opsiyon" else 1
         neden = " (take-profit target)" if b.get("kar_al_id") else " (scaled buy plan)" if b.get("kademeli_id") else ""
         vr.olay(v, "alim" if tip == "al" else "satis",
@@ -346,7 +346,13 @@ def islem_sil(iid):
     with vr._KILIT:
         v = vr.oku()
         i = next((x for x in v["islemler"] if x["id"] == iid), None)
-        v["islemler"] = [x for x in v["islemler"] if x["id"] != iid]
+        kalan = [x for x in v["islemler"] if x["id"] != iid]
+        if i and i["tip"] == "al":
+            var = next((x for x in v["varliklar"] if x["id"] == i["varlik_id"]), None)
+            sorun = vr.satis_hatasi(var, kalan) if var else None
+            if sorun:
+                return hata("This buy can't be deleted because a later sale depends on it. Delete that sale first. (" + sorun + ")")
+        v["islemler"] = kalan
         if i:
             var = next((x for x in v["varliklar"] if x["id"] == i["varlik_id"]), {})
             vr.olay(v, "silme", f"{var.get('ad', '?')} trade deleted ({'buy' if i['tip'] == 'al' else 'sell'} {i['tarih']})",
