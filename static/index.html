@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/portfoy.ico">
+<title>Portfolio</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/chart.umd.min.js"></script>
+<script src="/static/lightweight-charts.js"></script>
+</head>
+<body>
+
+<header class="ust">
+  <div class="marka">Portfolio<span>.</span></div>
+  <nav class="sekmeler">
+    <button class="sekme aktif" data-sayfa="ana">Overview</button>
+    <button class="sekme" data-sayfa="varliklar">Holdings</button>
+    <button class="sekme" data-sayfa="izleme">Watchlist</button>
+    <button class="sekme" data-sayfa="senaryo">Options calculator</button>
+    <button class="sekme" data-sayfa="gunluk">Journal</button>
+    <button class="sekme" data-sayfa="gecmis">History</button>
+    <button class="sekme" data-sayfa="grafik">Charts</button>
+  </nav>
+  <div class="sag">
+    <span class="cip" id="piyasa-cip" title="US stock market (New York time)"><i class="durum-nokta"></i><span>—</span></span>
+    <span class="cip" id="tarih-cip">—</span>
+    <span class="cip">USD/TRY <b id="kur-cip">—</b></span>
+    <div class="ikili" id="para-secim">
+      <button data-para="USD" class="aktif">USD</button>
+      <button data-para="TL">TRY</button>
+    </div>
+    <button class="ikon-btn" id="yenile-btn" title="Refresh prices">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+    </button>
+    <button class="ikon-btn" id="ayar-btn" title="Settings and backup">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <div class="uyari-serit" id="uyari-serit"></div>
+
+  <!-- ===================== OVERVIEW ===================== -->
+  <section class="sayfa aktif" id="sayfa-ana">
+    <div class="izgara k4">
+      <div class="kart"><div class="etiket">Total balance</div><div class="buyuk" id="k-toplam">—</div><div class="alt-yazi" id="k-toplam-alt"></div></div>
+      <div class="kart"><div class="etiket">Net P&amp;L</div><div class="buyuk" id="k-kz">—</div><div class="alt-yazi" id="k-kz-alt"></div></div>
+      <div class="kart"><div class="etiket">Today</div><div class="buyuk" id="k-bugun">—</div><div class="alt-yazi" id="k-bugun-alt"></div></div>
+      <div class="kart"><div class="etiket">Cash</div><div class="buyuk" id="k-nakit">—</div><div class="alt-yazi" id="k-nakit-alt"></div></div>
+    </div>
+    <div class="bosluk"></div>
+    <div class="izgara k-ana">
+      <div class="kart">
+        <div class="kart-bas"><h3>Allocation</h3>
+          <div class="secim" id="dagilim-secim"><button data-v="sinif" class="aktif">Class</button><button data-v="varlik">Asset</button></div>
+        </div>
+        <div class="dagilim">
+          <div class="donut-kap"><canvas id="donut"></canvas>
+            <div class="donut-merkez"><div><div class="etiket">Total</div><div class="orta" id="donut-toplam">—</div></div></div>
+          </div>
+          <div class="lejant" id="lejant"></div>
+        </div>
+      </div>
+      <div class="kart">
+        <div class="kart-bas"><h3>P&amp;L chart</h3>
+          <div class="btnlar"><button class="btn kucuk" id="paylas-portfoy" title="Create a share card">Share</button>
+          <div class="secim aralik" data-hedef="ana"><button data-g="7">1W</button><button data-g="30">1M</button><button data-g="90">3M</button><button data-g="0" class="aktif">All</button></div></div>
+        </div>
+        <div class="grafik-kap"><canvas id="kz-grafik"></canvas></div>
+      </div>
+    </div>
+    <div class="bosluk"></div>
+    <div class="izgara k-ana">
+      <div class="kart">
+        <div class="kart-bas"><h3>Performance</h3></div>
+        <div class="donem" id="donem"></div>
+        <div class="bolum-baslik">Risk</div>
+        <div class="liste" id="risk"></div>
+      </div>
+      <div class="kart">
+        <div class="kart-bas"><h3>Intraday P&amp;L</h3><span class="etiket" id="gun-ici-not"></span></div>
+        <div class="grafik-kap"><canvas id="gun-ici-grafik"></canvas></div>
+      </div>
+    </div>
+    <div class="bosluk"></div>
+    <div class="kart">
+      <div class="kart-bas"><h3>P&amp;L contribution</h3>
+        <div class="secim" id="katki-secim"><button data-k="bugun">Today</button><button data-k="hafta">This week</button><button data-k="ay" class="aktif">This month</button><button data-k="baslangic">Since start</button></div>
+      </div>
+      <div class="grafik-kap kisa"><canvas id="katki-grafik"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ===================== HOLDINGS ===================== -->
+  <section class="sayfa" id="sayfa-varliklar">
+    <div class="izgara k4" id="v-ozet"></div>
+    <div class="ara-ust" style="margin-top:22px">
+      <div class="alt-sekmeler" id="v-alt-sekmeler">
+        <button data-sinif="kripto" class="aktif">Crypto</button><button data-sinif="hisse">Stocks</button><button data-sinif="opsiyon">Options</button>
+      </div>
+      <div class="btnlar">
+        <button class="btn ana" id="sinif-ekle-btn">+ Add</button>
+        <button class="btn" id="yatir-btn">Deposit</button>
+        <button class="btn" id="cek-btn">Withdraw</button>
+      </div>
+    </div>
+    <div id="v-icerik"></div>
+  </section>
+
+  <!-- ===================== WATCHLIST ===================== -->
+  <section class="sayfa" id="sayfa-izleme">
+    <div class="ara-ust"><h2>Watchlist</h2><button class="btn ana" id="izleme-ekle-btn">+ Add</button></div>
+    <div class="kart-izgara" id="izleme-liste"></div>
+  </section>
+
+  <!-- ===================== OPTIONS CALCULATOR ===================== -->
+  <section class="sayfa" id="sayfa-senaryo">
+    <div class="izgara k-senaryo">
+      <div class="kart">
+        <div class="kart-bas"><h3>Option</h3><select id="s-yukle" class="kucuk-secim"><option value="">Load from my positions…</option></select></div>
+        <div class="form">
+          <div class="alan"><label for="s-sembol">Underlying</label>
+            <div class="satir-btn"><input id="s-sembol" placeholder="e.g. AAPL" autocomplete="off"><button class="btn" id="s-getir">Load</button></div></div>
+          <div class="alan"><label>Type</label><div class="ikili tam-gen" id="s-tur"><button data-tur="put" class="aktif">Put</button><button data-tur="call">Call</button></div></div>
+          <div class="alan"><label for="s-vade">Expiration</label><select id="s-vade"><option value="">Load a symbol first</option></select>
+            <input id="s-vade-elle" type="date" class="gizli"></div>
+          <div class="alan"><label for="s-strike">Strike</label><select id="s-strike"><option value="">—</option></select>
+            <input id="s-strike-elle" type="number" step="any" class="gizli" placeholder="Strike"></div>
+          <div class="alan"><label for="s-adet">Contracts</label><input id="s-adet" type="number" min="1" step="1" value="1"></div>
+          <div class="alan"><label for="s-prim">Premium (per share, $)</label><input id="s-prim" type="number" step="any"></div>
+          <div class="alan"><label for="s-iv">IV % (today)</label><input id="s-iv" type="number" step="any"></div>
+          <div class="alan"><label>Current price</label><div class="orta num" id="s-fiyat">—</div></div>
+        </div>
+        <div class="alt-yazi" id="s-durum"></div>
+      </div>
+      <div class="kart">
+        <div class="izgara k4 ic" id="s-ozet"></div>
+        <div class="kaydiricilar">
+          <div class="kaydirici"><div class="k-ust"><span>Underlying price</span><b id="s-f-etiket">—</b></div><input type="range" id="s-f" min="0" max="1000" step="1" value="500"></div>
+          <div class="kaydirici"><div class="k-ust"><span>Date</span><b id="s-t-etiket">—</b></div><input type="range" id="s-t" min="0" max="30" step="1" value="0"></div>
+          <div class="kaydirici"><div class="k-ust"><span>IV</span><b id="s-v-etiket">—</b></div><input type="range" id="s-v" min="5" max="300" step="1" value="60"></div>
+        </div>
+        <div class="grafik-kap"><canvas id="s-grafik"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== JOURNAL ===================== -->
+  <section class="sayfa" id="sayfa-gunluk">
+    <div class="kart">
+      <div class="takvim-ust">
+        <div class="ay-nav"><button class="ikon-btn" id="ay-geri">‹</button><span id="ay-ad">—</span><button class="ikon-btn" id="ay-ileri">›</button></div>
+        <div class="ozet-cipleri" id="ay-ozet"></div>
+      </div>
+      <div class="takvim" id="takvim"></div>
+    </div>
+    <div class="bosluk"></div>
+    <div class="kart">
+      <div class="kart-bas"><h3>Monthly returns</h3></div>
+      <div class="tablo-kap" id="aylik"></div>
+    </div>
+  </section>
+
+  <!-- ===================== HISTORY ===================== -->
+  <section class="sayfa" id="sayfa-gecmis">
+    <div class="ara-ust">
+      <div class="secim" id="g-filtre">
+        <button data-f="" class="aktif">All</button><button data-f="alim">Buys</button><button data-f="satis">Sells</button>
+        <button data-f="nakit">Cash</button><button data-f="plan">Plans</button><button data-f="izleme">Watchlist</button>
+        <button data-f="duzenleme">Edits</button><button data-f="silme">Deletes</button>
+      </div>
+      <input id="g-ara" class="arama" placeholder="Search (e.g. BTC)">
+    </div>
+    <div id="gecmis-liste"></div>
+  </section>
+
+  <!-- ===================== CHARTS ===================== -->
+  <section class="sayfa" id="sayfa-grafik">
+    <div class="ara-ust">
+      <div class="btnlar" id="tv-hizli"></div>
+      <div class="btnlar"><input class="arama" id="tv-sembol" placeholder="Symbol (e.g. NASDAQ:AAPL)"><button class="btn" id="tv-git">Open</button>
+        <button class="btn" id="tv-gosterge">Indicators</button></div>
+    </div>
+    <div class="tv-kap" id="tv-kap"></div>
+  </section>
+</main>
+
+<!-- slide-in detail panel -->
+<div class="cekmece-perde" id="cekmece-perde"></div>
+<aside class="cekmece" id="cekmece"></aside>
+
+<footer class="serit" id="serit"></footer>
+
+<div class="perde" id="perde"><div class="modal" id="modal"></div></div>
+<div class="bildirim" id="bildirim"></div>
+<input type="file" id="yedek-dosya" accept=".json,application/json" style="display:none">
+
+<script src="/static/app.js"></script>
+</body>
+</html>

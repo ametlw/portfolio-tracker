@@ -1,0 +1,12 @@
+# Personal data, backups and logs — never commit
+veri/*
+!veri/.gitkeep
+
+# Python / setup
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
