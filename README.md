@@ -20,7 +20,8 @@ Your data stays on your machine in a single JSON file. No account, no login, no 
 - **Charts:** embedded TradingView with your own quick-access symbols and default indicators.
 - **Live data:** crypto prices stream from OKX's public feed; stock pre-market/after-hours prices are shown separately. US market clock in the header, BTC / ETH / NQ1! / ES1! ticker strip at the bottom.
 - **Share card:** a P&L image that shows percentages only and hides amounts.
-- USD / TRY display, automatic daily backups (last 30 days), backup download and restore.
+- **Display currency:** USD, EUR, BTC, ETH or USDT from the menu at the top right. Past days use that day's exchange rate, so in BTC mode you see whether your portfolio grew in BTC terms, not just in dollars.
+- Automatic daily backups (last 30 days), backup download and restore.
 
 ## Installation (Windows)
 

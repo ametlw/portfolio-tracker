@@ -113,7 +113,7 @@ def durum_hesapla(kaydet=True):
         hisse_sembolleri = [k["sembol"] for k in d["kalemler"] if k["sinif"] == "hisse" and k["acik"]] + \
                            [w["sembol"] for w in v["izleme"] if w["sinif"] == "hisse"]
         uzatilmis = {k: {"fiyat": f, "zaman": z} for k, (f, z) in fy.uzatilmis_toplu(hisse_sembolleri).items() if f}
-        return {
+        sonuc = {
             "bugun": date.today().isoformat(),
             "ayarlar": v["ayarlar"],
             "usdtry": d["usdtry"],
@@ -133,6 +133,36 @@ def durum_hesapla(kaydet=True):
             "uzatilmis": uzatilmis,
             "olaylar": list(reversed(v.get("olaylar", [])))[:1000],
         }
+    # display currency rates (fetched outside the data lock: network only, nothing is written)
+    sonuc.update(kur_bilgisi(sonuc["seri"], v["ayarlar"]["baslangic_tarihi"]))
+    return sonuc
+
+
+# Display currencies: Yahoo/Binance symbol whose price is USD per 1 unit.
+KUR_SEMBOL = {"EUR": "EURUSD=X", "BTC": "BTC-USD", "ETH": "ETH-USD", "USDT": "USDT-USD"}
+
+
+def kur_bilgisi(seri: list, baslangic_tarihi: str) -> dict:
+    """{'kurlar': {EUR: usd per unit, ...}, 'baslangic_kurlar': {...}}, and each seri row gets its day's 'kurlar'.
+    A currency whose rate can't be fetched is simply left out (the page then shows USD)."""
+    fiyatlar = fy.toplu(list(KUR_SEMBOL.values()))
+    simdi = {b: fiyatlar[s][0] for b, s in KUR_SEMBOL.items() if fiyatlar.get(s, (None,))[0]}
+    bas = date.fromisoformat(baslangic_tarihi)
+    ilk = min([bas] + [date.fromisoformat(r["tarih"]) for r in seri[:1]])
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        seriler = dict(zip(KUR_SEMBOL, ex.map(lambda s: fy.kapanis_serisi(s, ilk, date.today()), KUR_SEMBOL.values())))
+
+    def gun(tarih):
+        out = {}
+        for b in KUR_SEMBOL:
+            k = vr._kapanis(seriler.get(b) or {}, tarih) if tarih < date.today() else None
+            if k or simdi.get(b):
+                out[b] = k or simdi[b]
+        return out
+
+    for r in seri:
+        r["kurlar"] = gun(date.fromisoformat(r["tarih"]))
+    return {"kurlar": simdi, "baslangic_kurlar": gun(bas)}
 
 
 @app.get("/")

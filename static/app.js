@@ -33,19 +33,32 @@ function yerelYaz(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const kur = () => (D && D.usdtry) || 1;
 const nf = (min, max) => new Intl.NumberFormat("en-US", { minimumFractionDigits: min, maximumFractionDigits: max });
-const cevir = (usd) => (usd === null || usd === undefined ? usd : PARA === "TL" ? usd * kur() : usd);
+
+// Display currency. Rates are USD per 1 unit (EUR ≈ 1.08, BTC ≈ 70000); amounts are stored in USD.
+const BIRIMLER = {
+  USD: { on: "$", son: "", kripto: false },
+  EUR: { on: "€", son: "", kripto: false },
+  BTC: { on: "₿", son: "", kripto: true },
+  ETH: { on: "Ξ", son: "", kripto: true },
+  USDT: { on: "", son: " USDT", kripto: false },
+};
+if (!BIRIMLER[PARA]) PARA = "USD";
+const kurFiyat = (b = PARA) => (b === "USD" ? 1 : (D && D.kurlar && D.kurlar[b]) || null);
+const birim = () => (kurFiyat() ? PARA : "USD");             // no rate (offline) → show USD
+const kur = () => 1 / (kurFiyat(birim()) || 1);               // display units per 1 USD
+const cevir = (usd) => (usd === null || usd === undefined ? usd : usd * kur());
 
 function paraHam(x, { isaret = false, ondalik = null } = {}) {
   if (x === null || x === undefined || Number.isNaN(x)) return "—";
-  const abs = Math.abs(x), d = ondalik ?? (abs >= 1000 ? 0 : 2);
+  const b = BIRIMLER[birim()], abs = Math.abs(x);
+  const d = ondalik ?? (b.kripto ? (abs >= 100 ? 2 : abs >= 1 ? 4 : 6) : (abs >= 1000 ? 0 : 2));
   const on = x < 0 ? "−" : (isaret && x > 0 ? "+" : "");
-  return `${on}${PARA === "TL" ? "₺" : "$"}${nf(d, d).format(abs)}`;
+  return `${on}${b.on}${nf(d, d).format(abs)}${b.son}`;
 }
 function para(usd, { isaret = false, kurla = null, ondalik = null } = {}) {
   if (usd === null || usd === undefined || Number.isNaN(usd)) return "—";
-  return paraHam(PARA === "TL" ? usd * (kurla || kur()) : usd, { isaret, ondalik });
+  return paraHam(usd * (kurla ? 1 / kurla : kur()), { isaret, ondalik });
 }
 function fiyatYaz(f) {
   if (f === null || f === undefined || Number.isNaN(f)) return "—";
@@ -103,17 +116,36 @@ function zimniVol(p, S, K, T, tur) {
 }
 
 // ================================================================== P&L series (in display currency)
+// USD per 1 unit of the display currency on a past date (falls back to today's rate)
+const gunKuru = (kurlar) => (birim() === "USD" ? 1 : (kurlar && kurlar[birim()]) || kurFiyat(birim()));
+const basKuru = () => gunKuru(D.baslangic_kurlar);
 function kzSerisi() {
-  const ay = D.ayarlar, bas = ay.baslangic_bakiye || 0, basKur = ay.baslangic_usdtry || kur();
+  const bas = D.ayarlar.baslangic_bakiye || 0, bk = basKuru();
   return D.seri.map((r) => {
-    const k = r.usdtry || kur();
-    const kz = PARA === "TL" ? r.toplam * k - bas * basKur - r.net_yatirim * k : r.kz;
-    return { tarih: r.tarih, kz, toplam: PARA === "TL" ? r.toplam * k : r.toplam };
+    if (birim() === "USD") return { tarih: r.tarih, kz: r.kz, toplam: r.toplam, net: r.net_yatirim };
+    const k = gunKuru(r.kurlar);   // each day at that day's rate
+    return { tarih: r.tarih, kz: r.toplam / k - bas / bk - r.net_yatirim / k, toplam: r.toplam / k, net: r.net_yatirim / k };
   });
 }
+// Performance in the display currency (same math as the server's veri.performans, which is USD only)
+function performans() {
+  const s = kzSerisi();
+  if (!s.length) return {};
+  const bas = baslangicToplam(), son = s[s.length - 1], sermaye = bas + son.net;
+  const once = (n) => {
+    const sinir = new Date(new Date(son.tarih + "T00:00:00").getTime() - n * 86400000 + 43200000).toISOString().slice(0, 10);
+    const aday = s.filter((r) => r.tarih <= sinir);
+    return aday.length ? aday[aday.length - 1].kz : 0;
+  };
+  const getiri = (n) => { const fark = son.kz - once(n); return { kz: fark, yuzde: sermaye ? (fark / sermaye) * 100 : null }; };
+  let tepe = bas + s[0].kz, mdd = 0;
+  for (const r of s) { const x = bas + r.kz; tepe = Math.max(tepe, x); if (tepe > 0) mdd = Math.max(mdd, ((tepe - x) / tepe) * 100); }
+  return { toplam_kz: son.kz, toplam_yuzde: sermaye ? (son.kz / sermaye) * 100 : null,
+    gunluk: getiri(1), haftalik: getiri(7), aylik: getiri(30),
+    en_yuksek_bakiye: Math.max(...s.map((r) => r.toplam)), maks_dusus: mdd };
+}
 function baslangicToplam() {
-  const a = D.ayarlar;
-  return PARA === "TL" ? (a.baslangic_bakiye || 0) * (a.baslangic_usdtry || kur()) : (a.baslangic_bakiye || 0);
+  return (D.ayarlar.baslangic_bakiye || 0) / basKuru();
 }
 function gunlukDegisim() {
   const out = {};
@@ -143,7 +175,7 @@ function ciz(oto = false) {
   if (!D) return;
   const bugun = new Date(D.bugun + "T00:00:00");
   $("#tarih-cip").textContent = `${AYK[bugun.getMonth()]} ${bugun.getDate()}`;
-  $("#kur-cip").textContent = D.usdtry ? nf(2, 2).format(D.usdtry) : "—";
+  kurCipYaz();
   if (!AY) AY = { y: bugun.getFullYear(), m: bugun.getMonth() };
   const u = $("#uyari-serit");
   if (u) {
@@ -168,7 +200,17 @@ function grafikKur(ad, secici, cfg) {
   if (GRAFIK[ad]) GRAFIK[ad].destroy();
   GRAFIK[ad] = new Chart($(secici), cfg);
 }
-function eksenPara(v) { return `${v < 0 ? "−" : ""}${PARA === "TL" ? "₺" : "$"}${nf(0, 0).format(Math.abs(v))}`; }
+function eksenPara(v) {
+  const b = BIRIMLER[birim()];
+  return `${v < 0 ? "−" : ""}${b.on}${nf(0, b.kripto ? 4 : 0).format(Math.abs(v))}${b.son}`;
+}
+function kurCipYaz() {
+  const el = $("#kur-cip"), b = birim(), f = kurFiyat(b);
+  el.parentElement.style.display = PARA === "USD" ? "none" : "";
+  if (PARA === "USD") return;
+  if (b === "USD") { el.textContent = `${PARA} rate unavailable, showing USD`; return; }
+  el.textContent = BIRIMLER[b].kripto ? `1 ${b} = $${nf(0, 0).format(f)}` : `1 USD = ${BIRIMLER[b].on}${nf(4, 4).format(1 / f)}${BIRIMLER[b].son}`;
+}
 function eksen() {
   return { grid: { color: "rgba(255,255,255,0.05)", drawTicks: false }, border: { display: false },
     ticks: { color: css("--text-3"), padding: 8, font: { size: 11 } } };
@@ -232,9 +274,9 @@ function renklendir(liste) {
 
 // ================================================================== OVERVIEW
 function anaEkran() {
-  const ay = D.ayarlar, p = D.performans || {};
+  const ay = D.ayarlar, p = performans();   // values already in the display currency
   $("#k-toplam").textContent = para(D.toplam);
-  $("#k-toplam-alt").textContent = ay.baslangic_bakiye ? `Start ${para(ay.baslangic_bakiye, { kurla: ay.baslangic_usdtry })} · ${tarihTR(ay.baslangic_tarihi, true)}` : "";
+  $("#k-toplam-alt").textContent = ay.baslangic_bakiye ? `Start ${para(ay.baslangic_bakiye, { kurla: basKuru() })} · ${tarihTR(ay.baslangic_tarihi, true)}` : "";
   kpiKz();
   $("#k-nakit").textContent = para(D.nakit);
   $("#k-nakit-alt").textContent = D.toplam ? `${nf(0, 1).format((D.nakit / D.toplam) * 100)}% of portfolio` : "";
@@ -256,13 +298,13 @@ function anaEkran() {
   kzCizgi("kz", "#kz-grafik", s.map((q) => (q[0] === "Start" ? q[0] : tarihTR(q[0]))), s.map((q) => q[1]));
 
   const hucre = (ad, o) => `<div><span class="etiket">${ad}</span><b class="${o ? isaretSinif(o.kz) : ""}">${o ? yuzde(o.yuzde) : "—"}</b>
-      <div class="alt-yazi num">${o ? para(o.kz, { isaret: true }) : ""}</div></div>`;
+      <div class="alt-yazi num">${o ? paraHam(o.kz, { isaret: true }) : ""}</div></div>`;
   const top = p.toplam_kz !== undefined ? { kz: p.toplam_kz, yuzde: p.toplam_yuzde } : null;
   $("#donem").innerHTML = hucre("Daily", p.gunluk) + hucre("Weekly", p.haftalik) + hucre("Monthly", p.aylik) + hucre("Total", top);
   const satir = (a, b, sn = "") => `<div class="liste-satir"><span class="etiket">${a}</span><span class="num ${sn}">${b}</span></div>`;
-  $("#risk").innerHTML = satir("Peak balance", para(p.en_yuksek_bakiye)) +
+  $("#risk").innerHTML = satir("Peak balance", paraHam(p.en_yuksek_bakiye)) +
     satir("Max drawdown (from peak)", p.maks_dusus !== undefined ? `${nf(2, 2).format(p.maks_dusus)}%` : "—", p.maks_dusus > 0 ? "neg" : "") +
-    satir("Starting balance", para(ay.baslangic_bakiye, { kurla: ay.baslangic_usdtry })) +
+    satir("Starting balance", para(ay.baslangic_bakiye, { kurla: basKuru() })) +
     satir("Net deposits / withdrawals", para(D.net_yatirim, { isaret: true }));
 
   gunIciGrafik();
@@ -464,6 +506,25 @@ function varlikIslemi(v, k) {
     senaryo: () => senaryoyaYukle(v), paylas: () => paylasimModal(v) })[k]();
 }
 function kapatAcilir() { $$(".acilir").forEach((x) => x.remove()); }
+
+// ================================================================== display currency menu
+const BIRIM_AD = { USD: "US dollar", EUR: "Euro", BTC: "Bitcoin", ETH: "Ether", USDT: "Tether" };
+function paraDugmeYaz() { $("#para-dugme").textContent = PARA + " ▾"; }
+function paraMenusu() {
+  kapatAcilir();
+  const m = document.createElement("div"); m.className = "acilir para-menu";
+  m.innerHTML = Object.keys(BIRIMLER).map((b) =>
+    `<button data-birim="${b}" class="${b === PARA ? "secili" : ""}"><b>${b}</b><span>${BIRIM_AD[b]}</span></button>`).join("");
+  $("#para-kutu").appendChild(m);
+  m.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const b = e.target.closest("[data-birim]"); if (!b) return;
+    kapatAcilir();
+    PARA = b.dataset.birim; yerelYaz("para", PARA); paraDugmeYaz();
+    if (birim() !== PARA) bildir(`${PARA} rate is not available right now, showing USD`);
+    ciz(); senaryoHesapla();
+  });
+}
 
 // ================================================================== DRAWER (detail panel)
 function cekmeceAc(tur, id) {
@@ -1377,7 +1438,7 @@ document.addEventListener("click", (e) => {
   if (!t) { if (!e.target.closest(".acilir")) kapatAcilir(); return; }
   if (t.closest(".acilir")) return;
   if (t.classList.contains("sekme")) return sayfaGoster(t.dataset.sayfa);
-  if (t.dataset.para) { PARA = t.dataset.para; yerelYaz("para", PARA); $$("#para-secim button").forEach((b) => b.classList.toggle("aktif", b.dataset.para === PARA)); ciz(); return senaryoHesapla(); }
+  if (t.id === "para-dugme") return $("#para-kutu .acilir") ? kapatAcilir() : paraMenusu();
   if (t.closest("#dagilim-secim")) { DAGILIM = t.dataset.v; $$("#dagilim-secim button").forEach((b) => b.classList.toggle("aktif", b === t)); return anaEkran(); }
   const ar = t.closest(".aralik");
   if (ar && t.dataset.g !== undefined) { ARALIK[ar.dataset.hedef] = +t.dataset.g; $$("button", ar).forEach((b) => b.classList.toggle("aktif", b === t)); return ar.dataset.hedef === "ana" ? anaEkran() : varliklarSayfasi(); }
@@ -1457,7 +1518,7 @@ $("#s-strike-elle").addEventListener("input", () => { S.strike = Number(String($
 $("#s-yukle").addEventListener("change", (e) => { const v = D.varliklar.find((x) => x.id === e.target.value); if (v) senaryoyaYukle(v); });
 
 // ================================================================== startup
-$$("#para-secim button").forEach((b) => b.classList.toggle("aktif", b.dataset.para === PARA));
+paraDugmeYaz();
 sayfaGoster(yerelOku("sayfa") || "ana");
 piyasaCiz(); setInterval(piyasaCiz, 30000);
 seritCiz(); seritYukle(); setInterval(seritYukle, 60000);
