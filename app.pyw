@@ -4,7 +4,7 @@ The desktop shortcut runs this with .venv\\Scripts\\pythonw.exe (no console wind
   1) Starts the panel server in the background if it is not running.
   2) Opens the panel in an Edge (or Chrome) "app" window: no address bar or tabs.
   3) When the window closes, stops the server if this script started it.
-Errors are written to veri\\uygulama.log.
+Errors are written to data\\app.log.
 """
 import os
 import socket
@@ -23,8 +23,8 @@ os.chdir(KLASOR)
 
 PORT = 8765
 ADRES = f"http://127.0.0.1:{PORT}"
-LOG = KLASOR / "veri" / "uygulama.log"
-PROFIL = KLASOR / "veri" / ".pencere"   # separate browser profile for the window (remembers size/position)
+LOG = KLASOR / "data" / "app.log"
+PROFIL = KLASOR / "data" / ".window"   # separate browser profile for the window (remembers size/position)
 
 
 def log(mesaj):

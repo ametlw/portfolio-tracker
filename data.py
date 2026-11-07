@@ -1,6 +1,6 @@
 """Portfolio data and calculations.
 
-All data lives in veri/veri.json. Amounts are in USD.
+All data lives in data/data.json. Amounts are in USD.
 """
 import json
 import math
@@ -12,11 +12,44 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import fiyat as fy
+import prices as fy
 
-KLASOR = Path(__file__).parent / "veri"
-DOSYA = KLASOR / "veri.json"
-YEDEKLER = KLASOR / "yedekler"
+KLASOR = Path(__file__).parent / "data"
+DOSYA = KLASOR / "data.json"
+YEDEKLER = KLASOR / "backups"
+
+
+def _eski_klasoru_tasi() -> None:
+    """Earlier versions kept data in veri/ (veri.json, yedekler/veri-DATE.json). Move it to data/ once."""
+    eski = Path(__file__).parent / "veri"
+    if not eski.is_dir() or DOSYA.exists():
+        return
+    try:
+        KLASOR.mkdir(exist_ok=True)
+        tasi = {"veri.json": "data.json", "veri.yedek.json": "data.prev.json", ".pencere": ".window",
+                "baslangic.json": "start.json"}
+        for ad, yeni in tasi.items():
+            if (eski / ad).exists() and not (KLASOR / yeni).exists():
+                shutil.move(str(eski / ad), str(KLASOR / yeni))
+        if (eski / "yedekler").is_dir():
+            YEDEKLER.mkdir(exist_ok=True)
+            for f in (eski / "yedekler").glob("*.json"):
+                ad = f.name.replace("geri-yukleme-oncesi-", "before-restore-")
+                ad = "data-" + ad[5:] if ad.startswith("veri-") else ad
+                if not (YEDEKLER / ad).exists():
+                    shutil.move(str(f), str(YEDEKLER / ad))
+        for f in sorted(eski.rglob("*"), reverse=True):   # remove what's left if it is only logs / empty folders
+            if f.is_file() and f.suffix == ".log":
+                f.unlink()
+            elif f.is_dir() and not any(f.iterdir()):
+                f.rmdir()
+        if not any(eski.iterdir()):
+            eski.rmdir()
+    except OSError:
+        pass   # never block startup; the old folder simply stays where it is
+
+
+_eski_klasoru_tasi()
 YEDEK_GUN = 30
 
 
@@ -30,7 +63,7 @@ class _Kilit:
 
     def _dosya_kilitle(self):
         KLASOR.mkdir(exist_ok=True)
-        self._f = open(KLASOR / ".kilit", "a+b")
+        self._f = open(KLASOR / ".lock", "a+b")
         bas = time.time()
         while True:
             try:
@@ -108,7 +141,7 @@ def bos_veri() -> dict:
 def oku() -> dict:
     with _KILIT:
         if not DOSYA.exists():
-            ilk = KLASOR / "baslangic.json"
+            ilk = KLASOR / "start.json"
             if ilk.exists():
                 return json.loads(ilk.read_text(encoding="utf-8"))
             return bos_veri()
@@ -124,7 +157,7 @@ def yaz(v: dict) -> None:
         gecici = DOSYA.with_suffix(".tmp")
         gecici.write_text(json.dumps(v, ensure_ascii=False, indent=2), encoding="utf-8")
         if DOSYA.exists():
-            shutil.copyfile(DOSYA, KLASOR / "veri.yedek.json")
+            shutil.copyfile(DOSYA, KLASOR / "data.prev.json")
         gecici.replace(DOSYA)
         gunluk_yedek()
 
@@ -152,16 +185,16 @@ def kapanis_gecti_mi(gun: date) -> bool:
 
 
 def gunluk_yedek() -> None:
-    """Once a day: veri/yedekler/veri-YYYY-MM-DD.json; the last 30 days are kept."""
+    """Once a day: data/backups/data-YYYY-MM-DD.json; the last 30 days are kept."""
     try:
         YEDEKLER.mkdir(parents=True, exist_ok=True)
-        hedef = YEDEKLER / f"veri-{bugun().isoformat()}.json"
+        hedef = YEDEKLER / f"data-{bugun().isoformat()}.json"
         if not hedef.exists() and DOSYA.exists():
             shutil.copyfile(DOSYA, hedef)
-        eski = sorted(YEDEKLER.glob("veri-????-??-??.json"))
+        eski = sorted(YEDEKLER.glob("data-????-??-??.json"))
         for f in eski[:-YEDEK_GUN]:
             f.unlink()
-        oncesi = sorted(YEDEKLER.glob("geri-yukleme-oncesi-*.json"))
+        oncesi = sorted(YEDEKLER.glob("before-restore-*.json"))
         for f in oncesi[:-10]:
             f.unlink()
     except OSError:

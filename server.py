@@ -9,8 +9,8 @@ from datetime import date, timedelta
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-import fiyat as fy
-import veri as vr
+import prices as fy
+import data as vr
 
 KOK = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(KOK, "static"), static_url_path="/static")
@@ -812,7 +812,7 @@ def gun_sonu():
 def yedek_indir():
     v = vr.oku()
     return Response(json.dumps(v, ensure_ascii=False, indent=2), mimetype="application/json",
-                    headers={"Content-Disposition": f"attachment; filename=portfoy-yedek-{date.today()}.json"})
+                    headers={"Content-Disposition": f"attachment; filename=portfolio-backup-{date.today()}.json"})
 
 
 @app.post("/api/yedek")
@@ -837,7 +837,7 @@ def _geri_yukleme_oncesi():
         vr.YEDEKLER.mkdir(parents=True, exist_ok=True)
         import shutil
         from datetime import datetime
-        shutil.copyfile(vr.DOSYA, vr.YEDEKLER / f"geri-yukleme-oncesi-{datetime.now():%Y-%m-%d-%H%M%S}.json")
+        shutil.copyfile(vr.DOSYA, vr.YEDEKLER / f"before-restore-{datetime.now():%Y-%m-%d-%H%M%S}.json")
 
 
 SON_NABIZ = {"zaman": None}

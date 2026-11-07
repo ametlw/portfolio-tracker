@@ -21,4 +21,4 @@ Report privately through GitHub: go to the repository's **Security** tab and cho
 
 ## Your data
 
-Your portfolio data is stored in `veri/` on your computer and is excluded from git by `.gitignore`. Never commit it, and do not share backup files publicly: they contain your positions and balances.
+Your portfolio data is stored in `data/` on your computer and is excluded from git by `.gitignore`. Never commit it, and do not share backup files publicly: they contain your positions and balances.

@@ -1,6 +1,8 @@
 # Personal data, backups and logs — never commit
-veri/*
-!veri/.gitkeep
+data/*
+!data/.gitkeep
+# old data folder name (moved to data/ automatically)
+veri/
 
 # Python / setup
 .venv/

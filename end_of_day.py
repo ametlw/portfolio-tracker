@@ -1,7 +1,7 @@
 """End-of-day snapshot. A Windows scheduled task runs it every night at 00:30 (even if the panel is closed).
 
 After midnight it records the previous day's close. It only marks the day as final once the
-US market close (16:00 New York) has passed. Run manually: .venv\\Scripts\\python.exe gun_sonu.py
+US market close (16:00 New York) has passed. Run manually: .venv\\Scripts\\python.exe end_of_day.py
 """
 import sys
 import traceback
@@ -10,9 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import veri as vr  # noqa: E402
+import data as vr  # noqa: E402
 
-LOG = Path(__file__).parent / "veri" / "gun_sonu.log"
+LOG = Path(__file__).parent / "data" / "end_of_day.log"
 
 
 def main():

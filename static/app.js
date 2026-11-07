@@ -1360,7 +1360,7 @@ function ayarModal() {
     ${altBtn()}`, () => {
     api("GET", "/api/yedekler").then((l) => {
       const el = $("#m-yedekler"); if (!el) return;
-      el.innerHTML = l.length ? `<table class="tablo"><tbody>${l.map((y) => `<tr><td>${y.dosya.startsWith("geri-yukleme-oncesi") ? `State before restore · ${esc(y.zaman.replace("T", " "))}` : esc(y.dosya.replace(/^veri-/, "").replace(/\.json$/, ""))}</td>
+      el.innerHTML = l.length ? `<table class="tablo"><tbody>${l.map((y) => `<tr><td>${y.dosya.startsWith("before-restore") ? `State before restore · ${esc(y.zaman.replace("T", " "))}` : esc(y.dosya.replace(/^data-/, "").replace(/\.json$/, ""))}</td>
         <td class="sag-hiza etiket">${nf(0, 0).format(y.boyut / 1024)} KB</td><td class="sag-hiza"><button class="btn kucuk" data-yedek-don="${esc(y.dosya)}">Restore</button></td></tr>`).join("")}</tbody></table>`
         : "No automatic backups yet. The first one is created on the first save.";
     }).catch((e) => { const el = $("#m-yedekler"); if (el) el.textContent = e.message; });

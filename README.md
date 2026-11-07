@@ -59,9 +59,10 @@ Symbol examples: crypto `BTC`, `ETH` (`-USD` is added automatically), stocks `AA
 
 ## Data and backups
 
-- All data lives in `veri/veri.json`. A dated copy is saved to `veri/yedekler/` every day (last 30 days kept); restore any of them from Settings.
+- All data lives in `data/data.json`. A dated copy is saved to `data/backups/` every day (last 30 days kept); restore any of them from Settings.
 - **Settings → Download backup** exports everything as a single file.
-- The `veri/` folder is excluded from git, so your data is never committed.
+- The `data/` folder is excluded from git, so your data is never committed.
+- Updating from an older version that used the `veri/` folder: your data is moved to `data/` automatically on the next start, and `start.bat` points an existing daily task and desktop shortcut to the renamed files.
 
 ## If prices stop loading
 

@@ -238,7 +238,7 @@ def _binance_klines(cift: str, aralik: str, ek: str = "") -> list:
     import urllib.request
     from datetime import datetime, timezone
     url = f"https://api.binance.com/api/v3/klines?symbol={cift}&interval={aralik}{ek}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "portfoy-paneli"}), timeout=10) as r:
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "portfolio-tracker"}), timeout=10) as r:
         ham = _json.loads(r.read().decode())
     return [{"time": datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc).date().isoformat(),
              "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4])} for k in ham]
@@ -319,7 +319,7 @@ def _hl_mids(dex: str) -> dict:
     import urllib.request
     istek = urllib.request.Request("https://api.hyperliquid.xyz/info",
                                    data=_json.dumps({"type": "allMids", "dex": dex}).encode(),
-                                   headers={"Content-Type": "application/json", "User-Agent": "portfoy-paneli"})
+                                   headers={"Content-Type": "application/json", "User-Agent": "portfolio-tracker"})
     with urllib.request.urlopen(istek, timeout=8) as r:
         return _json.loads(r.read().decode())
 

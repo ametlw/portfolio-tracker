@@ -8,7 +8,7 @@ if not exist ".venv\Scripts\pythonw.exe" (
 )
 echo Creating a "Portfolio" shortcut on your desktop...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$d=[Environment]::GetFolderPath('Desktop'); $k=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Portfolio.lnk')); $k.TargetPath='%~dp0.venv\Scripts\pythonw.exe'; $k.Arguments='\"%~dp0uygulama.pyw\"'; $k.WorkingDirectory='%~dp0'; $k.IconLocation='%~dp0static\portfoy.ico'; $k.Description='Portfolio tracker'; $k.Save()"
+  "$d=[Environment]::GetFolderPath('Desktop'); $k=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Portfolio.lnk')); $k.TargetPath='%~dp0.venv\Scripts\pythonw.exe'; $k.Arguments='\"%~dp0app.pyw\"'; $k.WorkingDirectory='%~dp0'; $k.IconLocation='%~dp0static\portfolio.ico'; $k.Description='Portfolio tracker'; $k.Save()"
 if errorlevel 1 (
   echo Could not create the shortcut. Check the error message above.
   pause
